@@ -1,0 +1,8 @@
+C:\visual projects\bot_piu\obj\Release\net8.0\BotPiu.csproj.AssemblyReference.cache
+C:\visual projects\bot_piu\obj\Release\net8.0\rpswa.dswa.cache.json
+C:\visual projects\bot_piu\obj\Release\net8.0\BotPiu.GeneratedMSBuildEditorConfig.editorconfig
+C:\visual projects\bot_piu\obj\Release\net8.0\BotPiu.AssemblyInfoInputs.cache
+C:\visual projects\bot_piu\obj\Release\net8.0\BotPiu.AssemblyInfo.cs
+C:\visual projects\bot_piu\obj\Release\net8.0\BotPiu.csproj.CoreCompileInputs.cache
+C:\visual projects\bot_piu\obj\Release\net8.0\BotPiu.MvcApplicationPartsAssemblyInfo.cache
+C:\visual projects\bot_piu\obj\Release\net8.0\BotPiu.sourcelink.json

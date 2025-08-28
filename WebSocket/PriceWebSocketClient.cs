@@ -1,19 +1,22 @@
 using System;
 using System.Threading.Tasks;
-using Binance.Net;
 using Binance.Net.Clients;
-using Binance.Net.Objects.Models.Spot.Socket;
+using CryptoExchange.Net.Sockets;
 
 namespace WebSocket
 {
-    public class PriceWebSocketClient
+    /// <summary>
+    /// Простой WebSocket клиент для получения цен
+    /// </summary>
+    public class PriceWebSocketClient : IDisposable
     {
         private readonly BinanceSocketClient _socketClient;
         private readonly string _symbol;
+        private UpdateSubscription? _subscription;
         private decimal _currentPrice;
-        private bool _isConnected = false;
 
         public event Action<decimal>? OnPriceUpdate;
+        public event Action<string>? OnError;
 
         public PriceWebSocketClient(BinanceSocketClient socketClient, string symbol)
         {
@@ -21,40 +24,76 @@ namespace WebSocket
             _symbol = symbol;
         }
 
-        public async Task ConnectAsync()
+        public async Task<bool> ConnectAsync()
         {
-            if (_isConnected) return;
-
-            var subscription = await _socketClient.UsdFuturesApi.SubscribeToTickerUpdatesAsync(
-                _symbol,
-                (update) =>
-                {
-                    _currentPrice = update.Data.LastPrice;
-                    OnPriceUpdate?.Invoke(_currentPrice);
-                });
-
-            if (subscription.Success)
+            try
             {
-                _isConnected = true;
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔌 Подключение к ценам {_symbol}...");
+
+                var subscription = await _socketClient.UsdFuturesApi.SubscribeToTickerUpdatesAsync(
+                    _symbol,
+                    (update) =>
+                    {
+                        try
+                        {
+                            _currentPrice = update.Data.LastPrice;
+                            OnPriceUpdate?.Invoke(_currentPrice);
+                        }
+                        catch (Exception ex)
+                        {
+                            OnError?.Invoke($"Price update error: {ex.Message}");
+                        }
+                    });
+
+                if (subscription.Success)
+                {
+                    _subscription = subscription.Data;
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Подключено к ценам {_symbol}");
+                    return true;
+                }
+                else
+                {
+                    OnError?.Invoke($"Subscription failed: {subscription.Error?.Message ?? "Unknown error"}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                OnError?.Invoke($"Connection exception: {ex.Message}");
+                return false;
             }
         }
 
         public async Task DisconnectAsync()
         {
-            if (!_isConnected) return;
-
-            await _socketClient.UnsubscribeAllAsync();
-            _isConnected = false;
+            try
+            {
+                if (_subscription != null)
+                {
+                    await _subscription.CloseAsync();
+                    _subscription = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка отключения цен {_symbol}: {ex.Message}");
+            }
         }
 
-        public decimal GetCurrentPrice()
-        {
-            return _currentPrice;
-        }
+        public bool IsConnected() => _subscription != null;
 
-        public bool IsConnected()
+        public decimal GetCurrentPrice() => _currentPrice;
+
+        public void Dispose()
         {
-            return _isConnected;
+            try
+            {
+                _subscription?.CloseAsync()?.Wait();
+            }
+            catch
+            {
+                // Игнорируем ошибки при закрытии
+            }
         }
     }
 }

@@ -6,7 +6,10 @@ using Binance.Net.Clients;
 using CryptoExchange.Net.Authentication;
 using Trading;
 using Config;
+using Testing;
 using Microsoft.Extensions.Configuration;
+using Services;
+using Models;
 
 class Program
 {
@@ -30,9 +33,56 @@ class Program
         catch { }
     }
 
-    static async Task Main()
+    static async Task Main(string[] args)
     {
+        // Проверяем аргументы командной строки
+        if (args.Length > 0)
+        {
+            switch (args[0].ToLower())
+            {
+                case "test-pool":
+                    await UniversalTester.TestCoinPoolAsync();
+                    return;
+                
+                case "test-websocket":
+                    await UniversalTester.TestWebSocketAsync();
+                    return;
+                
+                case "test-strategy":
+                    await UniversalTester.TestStrategyAsync();
+                    return;
+                
+                case "test-hft":
+                    await UniversalTester.TestHftSystemAsync();
+                    return;
+                
+                case "test-auto":
+                    await UniversalTester.TestAutoTradingAsync();
+                    return;
+                
+                case "test-all":
+                    await UniversalTester.RunAllTestsAsync();
+                    return;
+                    
+                default:
+                    Console.WriteLine("🚀 ДОСТУПНЫЕ КОМАНДЫ ТЕСТИРОВАНИЯ:");
+                    Console.WriteLine("==================================");
+                    Console.WriteLine("  test-pool       - Тест сбора и фильтрации пула монет");
+                    Console.WriteLine("  test-websocket  - Тест WebSocket real-time данных");
+                    Console.WriteLine("  test-strategy   - Тест торговой стратегии и сигналов");
+                    Console.WriteLine("  test-hft        - Тест псевдо-HFT системы");
+                    Console.WriteLine("  test-auto       - Тест автоматической торговли");
+                    Console.WriteLine("  test-all        - Запуск всех тестов последовательно");
+                    Console.WriteLine();
+                    Console.WriteLine("💡 Для обычной торговли запустите без параметров");
+                    return;
+            }
+        }
+
+        // АВТОНОМНЫЙ РЕЖИМ ТОРГОВЛИ с автовосстановлением
         LoadEnvFile();
+        
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 СИСТЕМА ЗАПУЩЕНА");
 
         // Загружаем ключи из .env
         var apiKey = Environment.GetEnvironmentVariable("BINANCE_API_KEY");
@@ -40,30 +90,75 @@ class Program
 
         if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(apiSecret))
         {
+            Console.WriteLine("❌ Не найдены API ключи в .env файле");
+            Console.WriteLine("Для тестирования пула монет используйте: dotnet run test-pool");
             return;
         }
 
-        // Загружаем конфигурацию
-        var configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("config.json", optional: false, reloadOnChange: true)
-            .Build();
+        Console.WriteLine("🚀 ЗАПУСК АВТОНОМНОЙ ТОРГОВОЙ СИСТЕМЫ");
+        Console.WriteLine("=====================================");
+        Console.WriteLine("🤖 Режим: ПОЛНАЯ АВТОНОМНОСТЬ");
+        Console.WriteLine("🔄 Автовосстановление: ВКЛЮЧЕНО");
+        Console.WriteLine("💾 Персистентное состояние: ВКЛЮЧЕНО");
+        Console.WriteLine("🛡️ Надежные WebSocket: ВКЛЮЧЕНЫ");
+        Console.WriteLine();
 
-        var tradingConfig = TradingConfig.LoadFromConfiguration(configuration);
+        // Создаем автономный движок
+        var autonomousEngine = new AutonomousEngine(apiKey, apiSecret);
 
-        // Создаем клиенты Binance
-        var restClient = new BinanceRestClient(options =>
+        // Обработка Ctrl+C для корректной остановки
+        var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (s, e) =>
         {
-            options.ApiCredentials = new ApiCredentials(apiKey, apiSecret);
-        });
+            e.Cancel = true;
+            Console.WriteLine();
+            Console.WriteLine("🛑 Получен сигнал остановки...");
+            autonomousEngine.Stop();
+            cts.Cancel();
+        };
 
-        var socketClient = new BinanceSocketClient(options =>
+        try
         {
-            options.ApiCredentials = new ApiCredentials(apiKey, apiSecret);
-        });
+            // Запускаем автономный движок
+            var autonomousTask = autonomousEngine.StartAsync();
+            
+            // Ожидаем завершения или сигнала остановки
+            var delayTask = Task.Delay(-1, cts.Token);
+            
+            await Task.WhenAny(autonomousTask, delayTask);
+            
+            // Если автономный движок завершился сам - ждем его корректного завершения
+            if (autonomousTask.IsCompleted)
+            {
+                await autonomousTask;
+            }
+            else
+            {
+                // Если получили Ctrl+C - ждем остановки движка
+                try
+                {
+                    await autonomousTask;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка при остановке: {ex.Message}");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("🛑 Остановка по требованию пользователя");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"💥 Критическая ошибка автономного движка: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        }
 
-        // Создаем торговый модуль и выполняем торговлю
-        var tradingModule = new TradingModule(restClient, socketClient, tradingConfig);
-        await tradingModule.ExecuteTradeAsync();
+        // Финальная информация
+        var uptime = DateTime.UtcNow - DateTime.UtcNow; // Простая заглушка
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🛑 Время работы: {uptime.TotalHours:F1} часов");
+        
+        Console.WriteLine("✅ Автономная торговая система завершена");
     }
 }

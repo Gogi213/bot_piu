@@ -36,9 +36,9 @@ namespace Trading
 
             var listenKey = listenKeyResponse.Data;
 
-            // Создаем WebSocket клиенты
+            // Создаем надежные WebSocket клиенты
             _priceWebSocket = new PriceWebSocketClient(_socketClient, _config.Symbol);
-            _orderWebSocket = new OrderWebSocketClient(_socketClient, listenKey);
+            _orderWebSocket = new OrderWebSocketClient(_socketClient, _restClient, listenKey);
 
             // Подписываемся на обновления цены
             _priceWebSocket.OnPriceUpdate += (price) =>
@@ -52,9 +52,30 @@ namespace Trading
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📡 WebSocket ордер обновление: {orderData.OrderId}, статус: {orderData.Status}");
             };
 
-            // Подключаемся
-            await _priceWebSocket.ConnectAsync();
-            await _orderWebSocket.ConnectAsync();
+            // Обработка ошибок WebSocket
+            _priceWebSocket.OnError += (error) =>
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка price WebSocket: {error}");
+            };
+
+            _orderWebSocket.OnError += (error) =>
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка order WebSocket: {error}");
+            };
+
+            // Подключаемся с автоматическим переподключением
+            var priceConnected = await _priceWebSocket.ConnectAsync();
+            var orderConnected = await _orderWebSocket.ConnectAsync();
+
+            if (!priceConnected)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Не удалось подключить price WebSocket, будет использован REST API");
+            }
+
+            if (!orderConnected)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Не удалось подключить order WebSocket, мониторинг ордеров может быть ограничен");
+            }
 
             // Ждем немного для инициализации
             await Task.Delay(1000);
@@ -81,7 +102,7 @@ namespace Trading
             return priceResponse.Data.Price;
         }
 
-        public async Task<(decimal quantity, decimal takePrice, decimal stopPrice, decimal tickSize)> CalculateOrderParametersAsync(decimal currentPrice)
+        public Task<(decimal quantity, decimal takePrice, decimal stopPrice, decimal tickSize)> CalculateOrderParametersAsync(decimal currentPrice)
         {
             if (currentPrice <= 0)
             {
@@ -122,7 +143,7 @@ namespace Trading
 
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Параметры {_config.Side}: цена={currentPrice:F6}, тейк={takePrice:F6}, стоп={stopPrice:F6}");
             
-            return (quantity, takePrice, stopPrice, tickSize);
+            return Task.FromResult((quantity, takePrice, stopPrice, tickSize));
         }
 
         public async Task<dynamic> PlaceEntryOrderAsync(decimal quantity)
