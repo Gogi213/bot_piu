@@ -1,12 +1,12 @@
 {
   "Trading": {
-    "Symbol": "DRIFTUSDT",
-    "Side": "BUY",
+    "Symbol": "PYTHUSDT",
+    "Side": "SELL",
     "UsdAmount": 8.0,
     "TakeProfitPercent": 2.0,
     "StopLossPercent": 1.2,
     "EnableBreakEven": true,
-    "BreakEvenActivationPercent": 0.7,
+    "BreakEvenActivationPercent": 0.6,
     "BreakEvenStopLossPercent": 0.2,
     "TickSize": 0.00001,
     "MonitorIntervalSeconds": 0.01
