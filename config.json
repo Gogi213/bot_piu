@@ -1,0 +1,14 @@
+{
+  "Trading": {
+    "Symbol": "RLCUSDT",
+    "Side": "BUY",
+    "UsdAmount": 8.0,
+    "TakeProfitPercent": 2.0,
+    "StopLossPercent": 1.2,
+    "EnableBreakEven": true,
+    "BreakEvenActivationPercent": 0.7,
+    "BreakEvenStopLossPercent": 0.2,
+    "TickSize": 0.00001,
+    "MonitorIntervalSeconds": 0.01
+  }
+}
