@@ -34,6 +34,10 @@ namespace Config
         public int ZScoreSmaPeriod { get; set; } = 17;
         public decimal ZScoreThreshold { get; set; } = 1.4m;
         public int StrategySmaPeriod { get; set; } = 30;
+        
+        // 15-секундный таймфрейм для торговли
+        public bool EnableFifteenSecondTrading { get; set; } = false;
+        public int FifteenSecondWarmupCandles { get; set; } = 35;
 
                 public static BackendConfig LoadFromConfiguration(IConfiguration configuration)
         {
@@ -50,8 +54,6 @@ namespace Config
     {
         public int MaxConcurrentPositions { get; set; } = 2;
         public int MinTimeBetweenTradesMinutes { get; set; } = 15;
-        public decimal RiskPercentPerTrade { get; set; } = 1.0m;
-        public decimal MinSignalStrength { get; set; } = 1.2m;
         public bool EnableAutoTrading { get; set; } = true;
 
         public static AutoTradingConfig LoadFromConfiguration(IConfiguration configuration)

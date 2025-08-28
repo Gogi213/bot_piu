@@ -43,6 +43,11 @@ namespace Services
                 .ToList();
         }
 
+        public List<string> GetAllCoinSymbols()
+        {
+            return _universeData.Keys.ToList();
+        }
+
         public void ClearUniverseData()
         {
             _universeData.Clear();

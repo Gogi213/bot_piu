@@ -9,16 +9,115 @@ namespace Services
     public class TradingStrategyService
     {
         private readonly BackendConfig _config;
+        private readonly FifteenSecondCandleService? _fifteenSecondService;
 
-        public TradingStrategyService(BackendConfig config)
+        public TradingStrategyService(BackendConfig config, FifteenSecondCandleService? fifteenSecondService = null)
         {
             _config = config;
+            _fifteenSecondService = fifteenSecondService;
         }
 
         /// <summary>
         /// Анализ торговых сигналов для монеты с использованием двойной стратегии
         /// </summary>
         public StrategyResult AnalyzeCoin(CoinData coinData)
+        {
+            // Если включена 15-секундная торговля, используем её
+            if (_config.EnableFifteenSecondTrading && _fifteenSecondService != null)
+            {
+                return AnalyzeCoinFifteenSecond(coinData);
+            }
+            
+            return AnalyzeCoinOneMinute(coinData);
+        }
+
+        /// <summary>
+        /// Анализ на 15-секундных свечах
+        /// </summary>
+        private StrategyResult AnalyzeCoinFifteenSecond(CoinData coinData)
+        {
+            if (_fifteenSecondService == null)
+            {
+                return new StrategyResult
+                {
+                    Symbol = coinData?.Symbol ?? "UNKNOWN",
+                    FinalSignal = "FLAT",
+                    Reason = "15s сервис не инициализирован"
+                };
+            }
+
+            // Проверяем готовность символа (прогрев)
+            if (!_fifteenSecondService.IsSymbolReady(coinData.Symbol))
+            {
+                return new StrategyResult
+                {
+                    Symbol = coinData.Symbol,
+                    FinalSignal = "FLAT",
+                    Reason = $"Прогрев 15s свечей: {_fifteenSecondService.GetFifteenSecondCandles(coinData.Symbol)?.Count ?? 0}/{_config.FifteenSecondWarmupCandles}"
+                };
+            }
+
+            // Получаем 15-секундные свечи
+            var fifteenSecondCandles = _fifteenSecondService.GetFifteenSecondCandles(coinData.Symbol);
+            if (fifteenSecondCandles == null || fifteenSecondCandles.Count < Math.Max(_config.ZScoreSmaPeriod, _config.StrategySmaPeriod))
+            {
+                return new StrategyResult
+                {
+                    Symbol = coinData.Symbol,
+                    FinalSignal = "FLAT",
+                    Reason = "Недостаточно 15s данных для анализа"
+                };
+            }
+
+            var result = new StrategyResult
+            {
+                Symbol = coinData.Symbol,
+                CurrentPrice = coinData.CurrentPrice,
+                Natr = coinData.Natr ?? 0,
+                Timestamp = DateTime.UtcNow
+            };
+
+            // Стратегия 1: Z-Score на 15s свечах
+            var (zScore, zScoreSignal) = TechnicalAnalysisService.CalculateZScoreSma(
+                fifteenSecondCandles, 
+                _config.ZScoreSmaPeriod, 
+                _config.ZScoreThreshold);
+
+            result.ZScore = zScore;
+            result.ZScoreSignal = zScoreSignal;
+
+            // Стратегия 2: SMA Trend на 15s свечах  
+            var (smaScore, smaSignal) = TechnicalAnalysisService.CalculateSmaStrategy(
+                fifteenSecondCandles, 
+                _config.StrategySmaPeriod);
+
+            result.Sma = smaScore;
+            result.SmaSignal = smaSignal;
+
+            // Комбинированный сигнал
+            if (result.ZScoreSignal == "BUY" && result.SmaSignal == "BUY")
+            {
+                result.FinalSignal = "BUY";
+                result.Reason = "Z-Score + SMA = BUY (15s)";
+            }
+            else if (result.ZScoreSignal == "SELL" && result.SmaSignal == "SELL")
+            {
+                result.FinalSignal = "SELL";
+                result.Reason = "Z-Score + SMA = SELL (15s)";
+            }
+            else
+            {
+                result.FinalSignal = "FLAT";
+                result.Reason = $"Конфликт стратегий: Z={result.ZScoreSignal}, SMA={result.SmaSignal} (15s)";
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Анализ на 1-минутных свечах (старый метод)
+        /// </summary>
+        private StrategyResult AnalyzeCoinOneMinute(CoinData coinData)
         {
             if (coinData?.RecentCandles == null || coinData.RecentCandles.Count < Math.Max(_config.ZScoreSmaPeriod, _config.StrategySmaPeriod))
             {

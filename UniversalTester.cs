@@ -519,7 +519,6 @@ namespace Testing
                 Console.WriteLine($"   🎯 Take Profit: {tradingConfig.TakeProfitPercent}%");
                 Console.WriteLine($"   🛡️ Stop Loss: {tradingConfig.StopLossPercent}%");
                 Console.WriteLine($"   ⏰ Пауза между сделками: {autoTradingConfig.MinTimeBetweenTradesMinutes} минут");
-                Console.WriteLine($"   ⚡ Минимальная сила сигнала: {autoTradingConfig.MinSignalStrength}");
                 Console.WriteLine($"   🔘 Автоторговля: {(autoTradingConfig.EnableAutoTrading ? "Включена" : "Отключена")}");
                 Console.WriteLine();
 

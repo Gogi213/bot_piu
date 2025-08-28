@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Security;
+using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Services;
 using Config;
@@ -165,7 +166,15 @@ namespace Services
             // Создаем сервисы
             var dataStorage = new DataStorageService();
             var binanceDataService = new BinanceDataService(restClient, backendConfig);
-            var tradingStrategyService = new TradingStrategyService(backendConfig);
+            
+            // 15-секундный сервис (опционально)
+            FifteenSecondCandleService? fifteenSecondService = null;
+            if (backendConfig.EnableFifteenSecondTrading)
+            {
+                fifteenSecondService = new FifteenSecondCandleService(socketClient, dataStorage, backendConfig);
+            }
+            
+            var tradingStrategyService = new TradingStrategyService(backendConfig, fifteenSecondService);
 
             var universeUpdateService = new UniverseUpdateService(
                 binanceDataService,
@@ -229,6 +238,17 @@ namespace Services
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Сбор данных о монетах...");
                 await universeUpdateService.UpdateUniverseAsync();
 
+                // Запускаем 15s сервис если включен
+                if (fifteenSecondService != null)
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 Запуск 15-секундных свечей...");
+                    // Получаем только отфильтрованные монеты по объёму и NATR
+                    var filteredCoins = dataStorage.GetFilteredCoins(backendConfig.MinVolumeUsdt, backendConfig.MinNatrPercent);
+                    var symbols = filteredCoins.Select(c => c.Symbol).ToList();
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Отобрано {symbols.Count} монет для 15s прогрева");
+                    await fifteenSecondService.StartAsync(symbols);
+                }
+
                 // Запускаем HFT движок
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ Запуск HFT движка сигналов...");
                 await hftSignalEngine.StartAsync();
@@ -240,6 +260,15 @@ namespace Services
                 Console.WriteLine();
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 АВТОМАТИЧЕСКАЯ ТОРГОВЛЯ ЗАПУЩЕНА!");
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] =====================================");
+                if (backendConfig.EnableFifteenSecondTrading)
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 Режим: 15-СЕКУНДНАЯ ТОРГОВЛЯ");
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⏱️ Прогрев: {backendConfig.FifteenSecondWarmupCandles} свечей");
+                }
+                else
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🕐 Режим: 1-МИНУТНАЯ ТОРГОВЛЯ");
+                }
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Система будет:");
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] • Мониторить рынок 24/7");
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] • Генерировать торговые сигналы");
@@ -258,6 +287,17 @@ namespace Services
                     {
                         Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔄 Обновление пула монет...");
                         await universeUpdateService.UpdateUniverseAsync();
+                        
+                        // Обновляем 15s сервис с новым пулом монет
+                        if (fifteenSecondService != null)
+                        {
+                            var filteredCoins = dataStorage.GetFilteredCoins(backendConfig.MinVolumeUsdt, backendConfig.MinNatrPercent);
+                            var newSymbols = filteredCoins.Select(c => c.Symbol).ToList();
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔥 Обновление 15s списка: {newSymbols.Count} монет");
+                            await fifteenSecondService.StopAsync();
+                            await fifteenSecondService.StartAsync(newSymbols);
+                        }
+                        
                         Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] ✅ Пул обновлен");
                     }
                     catch (Exception ex)

@@ -31,3 +31,4 @@ C:\visual projects\bot_piu\obj\Debug\net8.0\staticwebassets.build.json
 C:\visual projects\bot_piu\obj\Debug\net8.0\staticwebassets.build.json.cache
 C:\visual projects\bot_piu\obj\Debug\net8.0\staticwebassets.development.json
 C:\visual projects\bot_piu\obj\Debug\net8.0\staticwebassets.build.endpoints.json
+C:\visual projects\bot_piu\bin\Debug\net8.0\bot_state.json

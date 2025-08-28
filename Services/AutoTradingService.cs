@@ -33,10 +33,14 @@ namespace Services
         private readonly ConcurrentDictionary<string, DateTime> _lastTradeTime = new();
         private readonly ConcurrentDictionary<string, string> _lastSignal = new();
         private readonly ConcurrentDictionary<string, SimpleStateManager.ActivePosition> _activePositions = new();
+        
+        // Отслеживание переходов таймфрейма
+        private readonly ConcurrentDictionary<string, DateTime> _lastTimeframeMark = new();
 
         private Timer? _universeUpdateTimer;
         private volatile bool _isRunning = false;
         private DateTime _startTime;
+        private DateTime _systemStartTime;
 
         // События
         public event Action<string, string, StrategyResult>? OnSignalReceived;
@@ -87,12 +91,11 @@ namespace Services
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ===============================================");
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ HFT анализ: каждые 100мс");
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 Максимум позиций: {_autoTradingConfig.MaxConcurrentPositions}");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 💰 Риск на сделку: {_autoTradingConfig.RiskPercentPerTrade}%");
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⏰ Пауза между сделками: {_autoTradingConfig.MinTimeBetweenTradesMinutes} мин");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ Минимальная сила сигнала: {_autoTradingConfig.MinSignalStrength}");
                 Console.WriteLine();
 
                 _startTime = DateTime.UtcNow;
+                _systemStartTime = DateTime.UtcNow; // Запоминаем время запуска системы
                 _isRunning = true;
 
                 // Восстановление состояния из базы данных
@@ -125,13 +128,7 @@ namespace Services
                 // Подписка на сигналы HFT движка
                 _hftEngine.OnHftSignalChange += OnHftSignalChangeHandler;
 
-                // Запуск HFT движка
-                var hftStarted = await _hftEngine.StartAsync();
-                if (!hftStarted)
-                {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка запуска HFT движка");
-                    return false;
-                }
+                // HFT движок уже запущен в AutonomousEngine, подключаемся к нему
 
                 // Таймер для периодического обновления вселенной
                 var updateIntervalMs = _backendConfig.UpdateIntervalMinutes * 60 * 1000;
@@ -233,9 +230,17 @@ namespace Services
                 }
             }
 
-            // Проверка 4: Сила сигнала
-            var signalStrength = Math.Abs(strategyResult.ZScore);
-            if (signalStrength < _autoTradingConfig.MinSignalStrength)
+            // Убрана проверка силы сигнала - используем настройки стратегии
+            
+            // Проверка 4: Первые 5 секунд после запуска
+            var timeSinceStart = DateTime.UtcNow - _systemStartTime;
+            if (timeSinceStart.TotalSeconds < 5)
+            {
+                return false;
+            }
+            
+            // Проверка 5: Переход таймфрейма (КЛЮЧЕВОЕ!)
+            if (!IsTimeframeCrossing(symbol))
             {
                 return false;
             }
@@ -361,11 +366,80 @@ namespace Services
             // Базовая сумма из конфигурации
             var baseAmount = _tradingConfig.UsdAmount;
             
-            // Корректировка на основе силы сигнала (Z-Score)
-            var signalStrength = Math.Abs(strategyResult.ZScore);
-            var multiplier = Math.Min(2.0m, Math.Max(0.8m, signalStrength / _autoTradingConfig.MinSignalStrength)); // От 0.8x до 2x
+            // Используем фиксированную сумму из конфига
+            return baseAmount;
+        }
+
+        /// <summary>
+        /// Проверка перехода таймфрейма
+        /// </summary>
+        private bool IsTimeframeCrossing(string symbol)
+        {
+            var now = DateTime.UtcNow;
+            DateTime currentMark;
             
-            return Math.Round(baseAmount * multiplier, 2);
+            // Определяем текущую отметку таймфрейма
+            if (_backendConfig.EnableFifteenSecondTrading)
+            {
+                // 15-секундный таймфрейм: 00, 15, 30, 45 секунд
+                var seconds = (now.Second / 15) * 15;
+                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, seconds, DateTimeKind.Utc);
+            }
+            else
+            {
+                // 1-минутный таймфрейм: начало каждой минуты
+                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
+            }
+            
+            // Проверяем, произошёл ли переход
+            if (_lastTimeframeMark.TryGetValue(symbol, out var lastMark))
+            {
+                if (currentMark <= lastMark)
+                {
+                    return false; // Не было перехода
+                }
+                
+                // Сохраняем новую отметку и разрешаем торговлю
+                _lastTimeframeMark[symbol] = currentMark;
+                
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🕐 ПЕРЕХОД ТАЙМФРЕЙМА: {symbol} → {currentMark:HH:mm:ss}");
+                return true;
+            }
+            else
+            {
+                // ПЕРВЫЙ РАЗ - инициализируем, но НЕ разрешаем торговлю
+                _lastTimeframeMark[symbol] = currentMark;
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 ИНИЦИАЛИЗАЦИЯ ТАЙМФРЕЙМА: {symbol} → {currentMark:HH:mm:ss}");
+                return false; // НЕ разрешаем торговлю при инициализации
+            }
+        }
+
+        /// <summary>
+        /// Проверка перехода таймфрейма без изменения состояния
+        /// </summary>
+        private bool IsTimeframeCrossingCheck(string symbol)
+        {
+            var now = DateTime.UtcNow;
+            DateTime currentMark;
+            
+            // Определяем текущую отметку таймфрейма
+            if (_backendConfig.EnableFifteenSecondTrading)
+            {
+                var seconds = (now.Second / 15) * 15;
+                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, seconds, DateTimeKind.Utc);
+            }
+            else
+            {
+                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
+            }
+            
+            // Проверяем без изменения состояния
+            if (_lastTimeframeMark.TryGetValue(symbol, out var lastMark))
+            {
+                return currentMark > lastMark;
+            }
+            
+            return true; // Первый раз - разрешаем
         }
 
         /// <summary>
@@ -392,6 +466,13 @@ namespace Services
                     return $"Пауза еще {remaining.TotalMinutes:F0} мин";
                 }
             }
+            
+            var timeSinceStart = DateTime.UtcNow - _systemStartTime;
+            if (timeSinceStart.TotalSeconds < 5)
+                return $"Ожидание {5 - (int)timeSinceStart.TotalSeconds}с после запуска";
+            
+            if (!IsTimeframeCrossingCheck(symbol))
+                return "Не переход таймфрейма";
             
             return "Слабый сигнал или неизвестная причина";
         }

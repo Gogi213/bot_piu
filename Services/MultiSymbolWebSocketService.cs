@@ -199,7 +199,7 @@ namespace Services
                                         OnCandleUpdate?.Invoke(symbol, newCandle);
                                         OnNatrUpdate?.Invoke(symbol, coinData.Natr);
 
-                                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🕐 {symbol}: новая свеча, цена={newCandle.Close:F6}, NATR={coinData.Natr:F2}%");
+                                        // Убран мусорный лог новых свечей
                                     }
                                 }
                                 catch (Exception ex)

@@ -187,8 +187,12 @@ namespace Services
 
                         _signalEvents.Enqueue(hftEvent);
                         
-                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ HFT-ULTRA: {symbol} {oldSignal}→{GetSignalEmoji(newSignal.FinalSignal)}{newSignal.FinalSignal} " +
-                                         $"Z={newSignal.ZScore:F2} P={newSignal.CurrentPrice:F6} ({sw.ElapsedMilliseconds}ms)");
+                        // Оставляем только сигналы BUY/SELL
+                        if (newSignal.FinalSignal != "FLAT")
+                        {
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ СИГНАЛ: {symbol} {oldSignal}→{GetSignalEmoji(newSignal.FinalSignal)}{newSignal.FinalSignal} " +
+                                             $"Z={newSignal.ZScore:F2} P={newSignal.CurrentPrice:F6}");
+                        }
 
                         OnHftSignalChange?.Invoke(hftEvent);
                     }
@@ -275,8 +279,12 @@ namespace Services
 
                             _signalEvents.Enqueue(hftEvent);
 
-                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 HFT-FAST: {coin.Symbol} {oldSignal}→{GetSignalEmoji(signal.FinalSignal)}{signal.FinalSignal} " +
-                                             $"Z={signal.ZScore:F2} NATR={coin.Natr:F2}% ({sw.ElapsedMilliseconds}ms)");
+                            // Оставляем только сигналы BUY/SELL  
+                            if (signal.FinalSignal != "FLAT")
+                            {
+                                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 СИГНАЛ: {coin.Symbol} {oldSignal}→{GetSignalEmoji(signal.FinalSignal)}{signal.FinalSignal} " +
+                                                 $"Z={signal.ZScore:F2} NATR={coin.Natr:F2}%");
+                            }
 
                             OnHftSignalChange?.Invoke(hftEvent);
                         }
