@@ -1,6 +1,6 @@
 {
   "Trading": {
-    "Symbol": "RLCUSDT",
+    "Symbol": "DRIFTUSDT",
     "Side": "BUY",
     "UsdAmount": 8.0,
     "TakeProfitPercent": 2.0,

@@ -27,3 +27,9 @@ C:\visual projects\bot_piu\obj\Debug\net8.0\refint\BotPiu.dll
 C:\visual projects\bot_piu\obj\Debug\net8.0\BotPiu.pdb
 C:\visual projects\bot_piu\obj\Debug\net8.0\BotPiu.genruntimeconfig.cache
 C:\visual projects\bot_piu\obj\Debug\net8.0\ref\BotPiu.dll
+C:\visual projects\bot_piu\obj\Debug\net8.0\BotPiu.sourcelink.json
+C:\visual projects\bot_piu\bin\Debug\net8.0\Microsoft.Extensions.Configuration.FileExtensions.dll
+C:\visual projects\bot_piu\bin\Debug\net8.0\Microsoft.Extensions.Configuration.Json.dll
+C:\visual projects\bot_piu\bin\Debug\net8.0\Microsoft.Extensions.FileProviders.Abstractions.dll
+C:\visual projects\bot_piu\bin\Debug\net8.0\Microsoft.Extensions.FileProviders.Physical.dll
+C:\visual projects\bot_piu\bin\Debug\net8.0\Microsoft.Extensions.FileSystemGlobbing.dll

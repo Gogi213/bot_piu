@@ -217,7 +217,6 @@ namespace Trading
                             {
                                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка активации безубытка: {newStopOrderTask.Result.Error}");
                             }
-                            break; // Выходим из цикла проверки, чтобы не повторять
                         }
                     }
 

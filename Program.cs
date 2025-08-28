@@ -6,6 +6,7 @@ using Binance.Net.Clients;
 using CryptoExchange.Net.Authentication;
 using Trading;
 using Config;
+using Microsoft.Extensions.Configuration;
 
 class Program
 {
@@ -43,15 +44,12 @@ class Program
         }
 
         // Загружаем конфигурацию
-        TradingConfig tradingConfig;
-        try
-        {
-            tradingConfig = ConfigManager.LoadTradingConfig();
-        }
-        catch (Exception)
-        {
-            return;
-        }
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("config.json", optional: false, reloadOnChange: true)
+            .Build();
+
+        var tradingConfig = TradingConfig.LoadFromConfiguration(configuration);
 
         // Создаем клиенты Binance
         var restClient = new BinanceRestClient(options =>
