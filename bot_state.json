@@ -1,84 +1,7 @@
 {
-  "ActivePositions": {
-    "LPTUSDT": {
-      "Symbol": "LPTUSDT",
-      "Side": "BUY",
-      "UsdAmount": 8.0,
-      "EntryPrice": 7.854,
-      "CreatedAt": "2025-08-29T00:10:01.2075009Z",
-      "TradingConfig": {
-        "Symbol": "LPTUSDT",
-        "Side": "BUY",
-        "UsdAmount": 8.0,
-        "TakeProfitPercent": 3.55,
-        "StopLossPercent": 1.9,
-        "EnableBreakEven": true,
-        "BreakEvenActivationPercent": 1.9,
-        "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.01,
-        "MonitorIntervalSeconds": 0.01
-      }
-    },
-    "TREEUSDT": {
-      "Symbol": "TREEUSDT",
-      "Side": "SELL",
-      "UsdAmount": 8.0,
-      "EntryPrice": 0.3857000,
-      "CreatedAt": "2025-08-29T00:11:00.4969394Z",
-      "TradingConfig": {
-        "Symbol": "TREEUSDT",
-        "Side": "SELL",
-        "UsdAmount": 8.0,
-        "TakeProfitPercent": 3.55,
-        "StopLossPercent": 1.9,
-        "EnableBreakEven": true,
-        "BreakEvenActivationPercent": 1.9,
-        "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.001,
-        "MonitorIntervalSeconds": 0.01
-      }
-    },
-    "BASUSDT": {
-      "Symbol": "BASUSDT",
-      "Side": "BUY",
-      "UsdAmount": 8.0,
-      "EntryPrice": 0.0218490,
-      "CreatedAt": "2025-08-29T00:11:02.0845021Z",
-      "TradingConfig": {
-        "Symbol": "BASUSDT",
-        "Side": "BUY",
-        "UsdAmount": 8.0,
-        "TakeProfitPercent": 3.55,
-        "StopLossPercent": 1.9,
-        "EnableBreakEven": true,
-        "BreakEvenActivationPercent": 1.9,
-        "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.0001,
-        "MonitorIntervalSeconds": 0.01
-      }
-    },
-    "BTRUSDT": {
-      "Symbol": "BTRUSDT",
-      "Side": "BUY",
-      "UsdAmount": 8.0,
-      "EntryPrice": 0.0809400,
-      "CreatedAt": "2025-08-29T00:11:02.3368103Z",
-      "TradingConfig": {
-        "Symbol": "BTRUSDT",
-        "Side": "BUY",
-        "UsdAmount": 8.0,
-        "TakeProfitPercent": 3.55,
-        "StopLossPercent": 1.9,
-        "EnableBreakEven": true,
-        "BreakEvenActivationPercent": 1.9,
-        "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.0001,
-        "MonitorIntervalSeconds": 0.01
-      }
-    }
-  },
+  "ActivePositions": {},
   "LastTradeTime": {
-    "WLFIUSDT": "2025-08-28T23:44:00.6970575Z",
+    "WLFIUSDT": "2025-08-29T00:13:00.9463126Z",
     "BTRUSDT": "2025-08-29T00:11:02.3471254Z",
     "SOMIUSDT": "2025-08-28T20:36:03.4159628Z",
     "PYTHUSDT": "2025-08-28T23:25:00.4677518Z",
@@ -115,5 +38,5 @@
     "BASUSDT": "LONG",
     "LPTUSDT": "LONG"
   },
-  "LastSaved": "2025-08-29T00:11:02.3804373Z"
+  "LastSaved": "2025-08-29T00:35:08.9942016Z"
 }

@@ -38,7 +38,7 @@ namespace Services
         // Отслеживание переходов таймфрейма
         private readonly ConcurrentDictionary<string, DateTime> _lastTimeframeMark = new();
 
-        private Timer? _universeUpdateTimer;
+        // Timer для обновления пула удален - теперь только в AutonomousEngine
         private volatile bool _isRunning = false;
         private DateTime _startTime;
         private DateTime _systemStartTime;
@@ -134,11 +134,7 @@ namespace Services
                 _hftEngine.OnHftSignalChange += OnHftSignalChangeHandler;
 
                 // HFT движок уже запущен в AutonomousEngine, подключаемся к нему
-
-                // Таймер для периодического обновления вселенной
-                var updateIntervalMs = _backendConfig.UpdateIntervalMinutes * 60 * 1000;
-                _universeUpdateTimer = new Timer(async _ => await UpdateUniverseAsync(), 
-                                               null, updateIntervalMs, updateIntervalMs);
+                // Обновление пула монет происходит в AutonomousEngine, здесь не нужно дублировать
 
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Автоматическая торговая система запущена");
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 Ожидание торговых сигналов...");
@@ -641,39 +637,6 @@ namespace Services
         }
 
         /// <summary>
-        /// Периодическое обновление вселенной монет
-        /// </summary>
-        private async Task UpdateUniverseAsync()
-        {
-            if (!_isRunning) return;
-
-            try
-            {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔄 Обновление пула монет...");
-                
-                var result = await _universeService.UpdateUniverseAsync();
-                if (result.Success)
-                {
-                    var filteredCoins = _dataStorage.GetFilteredCoins(_backendConfig.MinVolumeUsdt, _backendConfig.MinNatrPercent);
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Пул обновлен: {filteredCoins.Count} монет");
-                    
-                    // Обновляем WebSocket подписки если нужно
-                    var newSymbols = filteredCoins.Take(20).Select(c => c.Symbol).ToList();
-                    // TODO: Реализовать умное обновление WebSocket подписок
-                }
-                else
-                {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка обновления пула: {result.ErrorMessage}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка обновления вселенной: {ex.Message}");
-                OnError?.Invoke($"Ошибка обновления: {ex.Message}");
-            }
-        }
-
-        /// <summary>
         /// Остановка автоматической торговли
         /// </summary>
         public async Task StopAsync()
@@ -683,8 +646,7 @@ namespace Services
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🛑 Остановка автоматической торговли...");
             _isRunning = false;
 
-            // Останавливаем таймер
-            _universeUpdateTimer?.Dispose();
+            // Timer обновления пула теперь управляется в AutonomousEngine
 
             // Останавливаем HFT движок
             await _hftEngine.StopAsync();

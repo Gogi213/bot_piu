@@ -288,15 +288,19 @@ namespace Services
                         Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔄 Обновление пула монет...");
                         await universeUpdateService.UpdateUniverseAsync();
                         
-                        // Обновляем 15s сервис с новым пулом монет
+                        // Получаем новый список монет
+                        var filteredCoins = dataStorage.GetFilteredCoins(backendConfig.MinVolumeUsdt, backendConfig.MinNatrPercent);
+                        var newSymbols = filteredCoins.Take(20).Select(c => c.Symbol).ToList(); // Ограничиваем до 20
+
+                        // Умное обновление 15s сервиса - сохраняем прогретые данные
                         if (fifteenSecondService != null)
                         {
-                            var filteredCoins = dataStorage.GetFilteredCoins(backendConfig.MinVolumeUsdt, backendConfig.MinNatrPercent);
-                            var newSymbols = filteredCoins.Select(c => c.Symbol).ToList();
-                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔥 Обновление 15s списка: {newSymbols.Count} монет");
-                            await fifteenSecondService.StopAsync();
-                            await fifteenSecondService.StartAsync(newSymbols);
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔥 Умное обновление 15s: {newSymbols.Count} монет");
+                            await fifteenSecondService.UpdateSymbolsAsync(newSymbols);
                         }
+
+                        // TODO: Обновление WebSocket подписок для новых монет
+                        // (пока оставляем как есть, можно реализовать позже)
                         
                         Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] ✅ Пул обновлен");
                     }

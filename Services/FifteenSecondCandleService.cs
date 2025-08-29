@@ -181,6 +181,96 @@ namespace Services
         }
 
         /// <summary>
+        /// Умное обновление списка символов - сохраняем прогретые данные
+        /// </summary>
+        public async Task UpdateSymbolsAsync(List<string> newSymbols)
+        {
+            if (!_isRunning) return;
+
+            var currentSymbols = _aggTradeSubscriptions.Keys.ToHashSet();
+            var newSymbolsSet = newSymbols.ToHashSet();
+
+            // Находим символы для добавления и удаления
+            var toAdd = newSymbolsSet.Except(currentSymbols).ToList();
+            var toRemove = currentSymbols.Except(newSymbolsSet).ToList();
+
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔄 15s обновление: +{toAdd.Count} -{toRemove.Count} ={newSymbolsSet.Count} монет");
+
+            // Удаляем старые символы
+            foreach (var symbol in toRemove)
+            {
+                if (_aggTradeSubscriptions.TryRemove(symbol, out var subscription))
+                {
+                    try
+                    {
+                        await subscription.CloseAsync();
+                        _candleBuilders.TryRemove(symbol, out _);
+                        _fifteenSecondCandles.TryRemove(symbol, out _);
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Удален 15s: {symbol}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка удаления {symbol}: {ex.Message}");
+                    }
+                }
+            }
+
+            // Добавляем новые символы
+            if (toAdd.Count > 0)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ➕ Добавляем 15s для {toAdd.Count} новых монет");
+                
+                // Подписываемся на новые символы пакетами по 10
+                const int batchSize = 10;
+                int addedCount = 0;
+
+                for (int i = 0; i < toAdd.Count; i += batchSize)
+                {
+                    var batch = toAdd.Skip(i).Take(batchSize).ToList();
+                    
+                    var subscription = await _socketClient.UsdFuturesApi.SubscribeToAggregatedTradeUpdatesAsync(
+                        batch,
+                        update =>
+                        {
+                            var symbol = update.Data.Symbol;
+                            var price = update.Data.Price;
+                            var quantity = update.Data.Quantity;
+                            var timestamp = update.Data.TradeTime;
+
+                            var builder = _candleBuilders.GetOrAdd(symbol, _ => new FifteenSecondCandleBuilder());
+                            builder.AddTrade(price, quantity, timestamp);
+                        });
+
+                    if (subscription.Success)
+                    {
+                        foreach (var symbol in batch)
+                        {
+                            _aggTradeSubscriptions[symbol] = subscription.Data;
+                            _fifteenSecondCandles[symbol] = new List<CandleData>();
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Добавлен 15s: {symbol} (прогрев с нуля)");
+                        }
+                        addedCount += batch.Count;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка добавления 15s пакета: {subscription.Error}");
+                    }
+
+                    await Task.Delay(100);
+                }
+
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Добавлено 15s: {addedCount}/{toAdd.Count} символов");
+            }
+
+            // Сохраненные символы продолжают работать с прогретыми данными
+            var preservedCount = currentSymbols.Intersect(newSymbolsSet).Count();
+            if (preservedCount > 0)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 💎 Сохранено прогретых 15s: {preservedCount} монет");
+            }
+        }
+
+        /// <summary>
         /// Остановка сервиса
         /// </summary>
         public async Task StopAsync()

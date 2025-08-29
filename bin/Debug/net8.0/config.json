@@ -17,14 +17,14 @@
   "Backend": {
     "Port": 5000,
     "MinVolumeUsdt": 30000000,
-    "MinNatrPercent": 0.4,
+    "MinNatrPercent": 0.55,
     "NatrPeriods": 30,
     "HistoryCandles": 60,
     "UpdateIntervalMinutes": 5,
-    "ZScoreSmaPeriod": 7,
-    "ZScoreThreshold": 1.1,
+    "ZScoreSmaPeriod": 17,
+    "ZScoreThreshold": 1.4,
     "StrategySmaPeriod": 30,
-    "EnableFifteenSecondTrading": false,
+    "EnableFifteenSecondTrading": true,
     "FifteenSecondWarmupCandles": 35
   }
 }
