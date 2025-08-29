@@ -27,6 +27,7 @@ namespace Services
         private readonly BinanceRestClient _restClient;
         private readonly BinanceSocketClient _socketClient;
         private readonly SimpleStateManager _stateManager;
+        private readonly BinanceDataService _binanceDataService;
 
         // Торговые модули для активных позиций
         private readonly ConcurrentDictionary<string, TradingModule> _activeTradingModules = new();
@@ -72,6 +73,7 @@ namespace Services
             _restClient = restClient;
             _socketClient = socketClient;
             _stateManager = stateManager;
+            _binanceDataService = new BinanceDataService(restClient, backendConfig);
         }
 
         /// <summary>
@@ -98,9 +100,12 @@ namespace Services
                 _systemStartTime = DateTime.UtcNow; // Запоминаем время запуска системы
                 _isRunning = true;
 
-                // Восстановление состояния из базы данных
+                // Восстановление состояния и синхронизация с биржей
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 💾 Восстановление состояния...");
                 await RestoreStateAsync();
+                
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔄 Синхронизация с биржей...");
+                await SynchronizePositionsAsync();
 
                 // Первичная загрузка данных
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Первичная загрузка данных...");
@@ -239,11 +244,7 @@ namespace Services
                 return false;
             }
             
-            // Проверка 5: Переход таймфрейма (КЛЮЧЕВОЕ!)
-            if (!IsTimeframeCrossing(symbol))
-            {
-                return false;
-            }
+            // Убрана проверка перехода таймфрейма - разрешаем торговлю в любое время
 
             return true;
         }
@@ -258,7 +259,7 @@ namespace Services
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 ОТКРЫТИЕ ПОЗИЦИИ: {symbol} {signal}");
 
                 // Создаем конфигурацию для торгового модуля
-                var tradingConfig = CreateTradingConfig(symbol, signal, strategyResult);
+                var tradingConfig = await CreateTradingConfigAsync(symbol, signal, strategyResult);
                 
                 // Создаем торговый модуль
                 var tradingModule = new TradingModule(_restClient, _socketClient, tradingConfig);
@@ -339,9 +340,28 @@ namespace Services
         /// <summary>
         /// Создание конфигурации для торгового модуля
         /// </summary>
-        private TradingConfig CreateTradingConfig(string symbol, string signal, StrategyResult strategyResult)
+        private async Task<TradingConfig> CreateTradingConfigAsync(string symbol, string signal, StrategyResult strategyResult)
         {
             var side = signal == "LONG" ? "BUY" : "SELL";
+            
+            // Получаем реальный TickSize для символа
+            var tickSize = await _binanceDataService.GetTickSizeAsync(symbol);
+            
+            // Простой fallback на основе цены
+            if (tickSize == null)
+            {
+                var currentPrice = GetCurrentPrice(symbol);
+                if (currentPrice > 1)
+                    tickSize = 0.01m;    // Для дорогих монет
+                else if (currentPrice > 0.1m)
+                    tickSize = 0.001m;   // Для средних монет  
+                else if (currentPrice > 0.01m)
+                    tickSize = 0.0001m;  // Для дешевых монет
+                else
+                    tickSize = 0.00001m; // Для очень дешевых монет
+                    
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔧 Использован fallback TickSize для {symbol}: {tickSize} (цена: {currentPrice})");
+            }
             
             return new TradingConfig
             {
@@ -353,7 +373,7 @@ namespace Services
                 EnableBreakEven = _tradingConfig.EnableBreakEven,
                 BreakEvenActivationPercent = _tradingConfig.BreakEvenActivationPercent,
                 BreakEvenStopLossPercent = _tradingConfig.BreakEvenStopLossPercent,
-                TickSize = _tradingConfig.TickSize,
+                TickSize = tickSize.Value,
                 MonitorIntervalSeconds = _tradingConfig.MonitorIntervalSeconds
             };
         }
@@ -471,10 +491,7 @@ namespace Services
             if (timeSinceStart.TotalSeconds < 5)
                 return $"Ожидание {5 - (int)timeSinceStart.TotalSeconds}с после запуска";
             
-            if (!IsTimeframeCrossingCheck(symbol))
-                return "Не переход таймфрейма";
-            
-            return "Слабый сигнал или неизвестная причина";
+            return "Неизвестная причина или слабый сигнал";
         }
 
         /// <summary>
@@ -547,6 +564,80 @@ namespace Services
         {
             var coinData = _dataStorage.GetCoinData(symbol);
             return coinData?.CurrentPrice ?? 0;
+        }
+
+        /// <summary>
+        /// Синхронизация позиций с биржей при запуске
+        /// </summary>
+        private async Task SynchronizePositionsAsync()
+        {
+            try
+            {
+                // Получаем реальные позиции с биржи
+                var realPositions = await _binanceDataService.GetRealPositionsAsync();
+                
+                // Получаем локальные позиции
+                var localPositions = _activePositions.ToList();
+                
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Найдено реальных позиций: {realPositions.Count}, локальных: {localPositions.Count}");
+                
+                // Проверяем локальные позиции на соответствие реальным
+                var positionsToRemove = new List<string>();
+                foreach (var localPosition in localPositions)
+                {
+                    if (!realPositions.ContainsKey(localPosition.Key))
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🧹 ОРФАННАЯ ПОЗИЦИЯ: {localPosition.Key} - удаляем из локального состояния");
+                        positionsToRemove.Add(localPosition.Key);
+                    }
+                    else
+                    {
+                        var realPos = realPositions[localPosition.Key];
+                        var localPos = localPosition.Value;
+                        
+                        // Проверяем соответствие направления
+                        if (realPos.Side != localPos.Side)
+                        {
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ НЕСООТВЕТСТВИЕ СТОРОНЫ: {localPosition.Key} Локально:{localPos.Side} vs Реально:{realPos.Side}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ ПОЗИЦИЯ СИНХРОНИЗИРОВАНА: {localPosition.Key} {localPos.Side}");
+                        }
+                    }
+                }
+                
+                // Удаляем орфанные позиции
+                foreach (var symbol in positionsToRemove)
+                {
+                    await _stateManager.RemoveActivePositionAsync(symbol);
+                    _activePositions.TryRemove(symbol, out _);
+                    
+                    // Также останавливаем торговый модуль если он активен
+                    if (_activeTradingModules.TryRemove(symbol, out var module))
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🛑 Остановлен торговый модуль для орфанной позиции: {symbol}");
+                    }
+                }
+                
+                // Показываем реальные позиции которых нет в локальном состоянии
+                foreach (var realPosition in realPositions)
+                {
+                    if (!_activePositions.ContainsKey(realPosition.Key))
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔍 ВНЕШНЯЯ ПОЗИЦИЯ: {realPosition.Key} {realPosition.Value.Side} " +
+                                        $"(PnL: {realPosition.Value.PnL:F2} USDT) - открыта вне бота");
+                    }
+                }
+                
+                var finalCount = _activePositions.Count;
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Синхронизация завершена. Активных позиций бота: {finalCount}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка синхронизации позиций: {ex.Message}");
+                await _stateManager.LogSystemEventAsync("POSITION_SYNC_ERROR", ex.Message, ex.StackTrace);
+            }
         }
 
         /// <summary>

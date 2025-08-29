@@ -185,19 +185,84 @@ namespace Services
             {
                 var exchangeInfoResponse = await _restClient.UsdFuturesApi.ExchangeData.GetExchangeInfoAsync();
                 if (!exchangeInfoResponse.Success)
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка получения ExchangeInfo: {exchangeInfoResponse.Error}");
                     return null;
+                }
 
                 var symbolInfo = exchangeInfoResponse.Data.Symbols.FirstOrDefault(s => s.Name == symbol);
                 if (symbolInfo == null)
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Символ {symbol} не найден в ExchangeInfo");
                     return null;
+                }
 
                 var priceFilter = symbolInfo.PriceFilter;
-                return priceFilter?.TickSize;
+                var tickSize = priceFilter?.TickSize;
+                
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📏 TickSize для {symbol}: {tickSize}");
+                return tickSize;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка получения TickSize для {symbol}: {ex.Message}");
                 return null;
             }
         }
+
+        /// <summary>
+        /// Получение реальных позиций с биржи Binance
+        /// </summary>
+        public async Task<Dictionary<string, BinancePosition>> GetRealPositionsAsync()
+        {
+            try
+            {
+                var positionsResponse = await _restClient.UsdFuturesApi.Account.GetPositionInformationAsync();
+                if (!positionsResponse.Success)
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка получения позиций: {positionsResponse.Error}");
+                    return new Dictionary<string, BinancePosition>();
+                }
+
+                var realPositions = new Dictionary<string, BinancePosition>();
+                
+                foreach (var position in positionsResponse.Data)
+                {
+                    // Только активные позиции (размер != 0)
+                    if (position.Quantity != 0)
+                    {
+                        realPositions[position.Symbol] = new BinancePosition
+                        {
+                            Symbol = position.Symbol,
+                            Side = position.Quantity > 0 ? "BUY" : "SELL",
+                            Quantity = Math.Abs(position.Quantity),
+                            EntryPrice = position.EntryPrice,
+                            MarkPrice = position.MarkPrice,
+                            PnL = position.UnrealizedPnl
+                        };
+                    }
+                }
+
+                return realPositions;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка получения реальных позиций: {ex.Message}");
+                return new Dictionary<string, BinancePosition>();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Упрощенная информация о позиции с биржи
+    /// </summary>
+    public class BinancePosition
+    {
+        public string Symbol { get; set; } = "";
+        public string Side { get; set; } = "";
+        public decimal Quantity { get; set; }
+        public decimal EntryPrice { get; set; }
+        public decimal MarkPrice { get; set; }
+        public decimal PnL { get; set; }
     }
 }

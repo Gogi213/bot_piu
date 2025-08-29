@@ -1,14 +1,26 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using Models;
 using Config;
 
 namespace Services
 {
+    /// <summary>
+    /// Состояние сигналов для edge-detection как в бэктестере
+    /// </summary>
+    public class SignalState
+    {
+        public bool PreviousLongCondition { get; set; } = false;
+        public bool PreviousShortCondition { get; set; } = false;
+        public DateTime LastUpdate { get; set; } = DateTime.MinValue;
+    }
+
     public class TradingStrategyService
     {
         private readonly BackendConfig _config;
+        private readonly ConcurrentDictionary<string, SignalState> _signalStates = new();
         private readonly FifteenSecondCandleService? _fifteenSecondService;
 
         public TradingStrategyService(BackendConfig config, FifteenSecondCandleService? fifteenSecondService = null)
@@ -94,22 +106,9 @@ namespace Services
             result.Sma = smaScore;
             result.SmaSignal = smaSignal;
 
-            // Комбинированный сигнал
-            if (result.ZScoreSignal == "BUY" && result.SmaSignal == "BUY")
-            {
-                result.FinalSignal = "BUY";
-                result.Reason = "Z-Score + SMA = BUY (15s)";
-            }
-            else if (result.ZScoreSignal == "SELL" && result.SmaSignal == "SELL")
-            {
-                result.FinalSignal = "SELL";
-                result.Reason = "Z-Score + SMA = SELL (15s)";
-            }
-            else
-            {
-                result.FinalSignal = "FLAT";
-                result.Reason = $"Конфликт стратегий: Z={result.ZScoreSignal}, SMA={result.SmaSignal} (15s)";
-            }
+            // Комбинированный сигнал с edge-detection как в бэктестере
+            result.FinalSignal = CombineSignalsWithEdgeDetection(coinData.Symbol, result.ZScoreSignal, result.SmaSignal);
+            result.Reason = GetSignalReason(result.ZScoreSignal, result.SmaSignal, result.ZScore, coinData.CurrentPrice, result.Sma) + " (15s)";
 
             return result;
         }
@@ -154,25 +153,59 @@ namespace Services
             result.Sma = sma;
             result.SmaSignal = smaSignal;
 
-            // Комбинированная логика: обе стратегии должны давать одинаковый сигнал
-            result.FinalSignal = CombineSignals(zScoreSignal, smaSignal);
+            // Комбинированная логика с edge-detection как в бэктестере
+            result.FinalSignal = CombineSignalsWithEdgeDetection(coinData.Symbol, zScoreSignal, smaSignal);
             result.Reason = GetSignalReason(zScoreSignal, smaSignal, zScore, coinData.CurrentPrice, sma);
 
             return result;
         }
 
         /// <summary>
-        /// Комбинирование сигналов от двух стратегий
+        /// Комбинирование сигналов с edge-detection как в бэктестере
         /// </summary>
-        private string CombineSignals(string zScoreSignal, string smaSignal)
+        private string CombineSignalsWithEdgeDetection(string symbol, string zScoreSignal, string smaSignal)
         {
-            // Обе стратегии должны давать одинаковый сигнал для входа в позицию
-            if (zScoreSignal == smaSignal && (zScoreSignal == "LONG" || zScoreSignal == "SHORT"))
+            // Убрано избыточное логирование анализа
+
+            // Получаем или создаем состояние для этой монеты
+            var state = _signalStates.GetOrAdd(symbol, _ => new SignalState());
+
+            // Текущие условия как в бэктестере
+            bool currentLongCondition = smaSignal == "LONG" && zScoreSignal == "LONG";   // (close > SMA) & (Z <= -threshold)
+            bool currentShortCondition = smaSignal == "SHORT" && zScoreSignal == "SHORT"; // (close < SMA) & (Z >= +threshold)
+
+            // Edge-detection: сигнал только при первом появлении условия
+            bool rawLong = currentLongCondition && !state.PreviousLongCondition;
+            bool rawShort = currentShortCondition && !state.PreviousShortCondition;
+
+            // Исключаем одновременные сигналы (как в бэктестере)
+            if (rawLong && rawShort)
             {
-                return zScoreSignal;
+                rawLong = false;
+                rawShort = false;
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ КОНФЛИКТ: {symbol} Одновременные LONG и SHORT - игнорируем");
             }
 
-            // В остальных случаях - нет сигнала
+            // Обновляем состояние
+            state.PreviousLongCondition = currentLongCondition;
+            state.PreviousShortCondition = currentShortCondition;
+            state.LastUpdate = DateTime.UtcNow;
+
+            // Возвращаем сигнал
+            if (rawLong)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 EDGE LONG СИГНАЛ: {symbol}");
+                return "LONG";
+            }
+            
+            if (rawShort)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 EDGE SHORT СИГНАЛ: {symbol}");
+                return "SHORT";
+            }
+
+            // Нет новых сигналов
+            // Убрано избыточное логирование FLAT
             return "FLAT";
         }
 

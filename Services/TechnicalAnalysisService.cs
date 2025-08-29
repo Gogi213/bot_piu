@@ -73,12 +73,14 @@ namespace Services
             var zScore = (currentPrice - sma) / stdDev;
             zScore = Math.Round(zScore, 4);
 
-            // Определяем сигнал (инвертированная логика для mean reversion)
+            // Определяем сигнал (логика как в бэктестере - mean reversion)
             string signal = "FLAT";
-            if (zScore > threshold)
-                signal = "SHORT"; // Цена слишком высоко - шорт (ожидаем падение)
-            else if (zScore < -threshold)
-                signal = "LONG";  // Цена слишком низко - лонг (ожидаем рост)
+            if (zScore < -threshold)
+                signal = "LONG";  // Z-Score <= -threshold: цена ниже среднего - покупаем на откате
+            else if (zScore > threshold)
+                signal = "SHORT"; // Z-Score >= +threshold: цена выше среднего - продаем на перекупе
+
+            // Убрано избыточное логирование Z-Score
 
             return (zScore, signal);
         }
@@ -110,6 +112,8 @@ namespace Services
             {
                 signal = "SHORT"; // Цена ниже SMA - шорт
             }
+
+            // Убрано избыточное логирование SMA
 
             return (sma, signal);
         }

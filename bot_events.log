@@ -1,1 +1,13 @@
 [2025-08-29 01:38:53.020] TRADE_COMPLETED: PYTHUSDT SELL 10,0USDT -> Completed (Duration: 0,9min)
+[2025-08-29 03:22:00.650] STATE_SAVE_ERROR: The process cannot access the file 'C:\visual projects\bot_piu\bot_state.json' because it is being used by another process.
+[2025-08-29 03:24:15.197] TRADE_COMPLETED: CTSIUSDT BUY 8,0USDT -> Completed (Duration: 0,1min)
+[2025-08-29 03:44:00.963] STATE_SAVE_ERROR: The process cannot access the file 'C:\visual projects\bot_piu\bot_state.json' because it is being used by another process.
+[2025-08-29 03:44:01.005] STATE_SAVE_ERROR: The process cannot access the file 'C:\visual projects\bot_piu\bot_state.json' because it is being used by another process.
+[2025-08-29 03:44:04.933] TRADE_COMPLETED: CTSIUSDT BUY 8,0USDT -> Completed (Duration: 0,1min)
+[2025-08-29 03:47:00.687] STATE_SAVE_ERROR: The process cannot access the file 'C:\visual projects\bot_piu\bot_state.json' because it is being used by another process.
+[2025-08-29 03:47:00.717] STATE_SAVE_ERROR: The process cannot access the file 'C:\visual projects\bot_piu\bot_state.json' because it is being used by another process.
+[2025-08-29 03:50:05.719] TRADE_COMPLETED: CTSIUSDT SELL 8,0USDT -> Completed (Duration: 0,1min)
+[2025-08-29 03:53:06.525] TRADE_COMPLETED: FLOWUSDT BUY 8,0USDT -> Completed (Duration: 0,1min)
+[2025-08-29 03:56:48.004] STATE_SAVE_ERROR: The process cannot access the file 'C:\visual projects\bot_piu\bot_state.json' because it is being used by another process.
+[2025-08-29 03:56:51.297] TRADE_COMPLETED: CTSIUSDT SELL 8,0USDT -> Completed (Duration: 0,1min)
+[2025-08-29 03:56:51.407] TRADE_COMPLETED: FLOWUSDT BUY 8,0USDT -> Completed (Duration: 0,1min)
