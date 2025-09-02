@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.IO;
 using Binance.Net;
@@ -9,6 +10,8 @@ using Config;
 using Testing;
 using Microsoft.Extensions.Configuration;
 using Services;
+using Services.OBIZScore;
+using Services.OBIZScore.Config;
 using Models;
 
 class Program
@@ -63,6 +66,18 @@ class Program
                 case "test-all":
                     await UniversalTester.RunAllTestsAsync();
                     return;
+                
+                case "test-coins":
+                    await TestCoinSelectionAsync();
+                    return;
+                
+                case "test-obiz":
+                    await TestOBIZStrategyAsync();
+                    return;
+                
+                case "test-components":
+                    await TestOBIZComponentsAsync();
+                    return;
                     
                 default:
                     Console.WriteLine("🚀 ДОСТУПНЫЕ КОМАНДЫ ТЕСТИРОВАНИЯ:");
@@ -73,6 +88,9 @@ class Program
                     Console.WriteLine("  test-hft        - Тест псевдо-HFT системы");
                     Console.WriteLine("  test-auto       - Тест автоматической торговли");
                     Console.WriteLine("  test-all        - Запуск всех тестов последовательно");
+                    Console.WriteLine("  test-coins      - Тест выбора монет для торговли");
+                    Console.WriteLine("  test-obiz       - Тест OBIZ-Score стратегии");
+                    Console.WriteLine("  test-components - Тест компонентов OBIZ (trades, orderbook, websockets)");
                     Console.WriteLine();
                     Console.WriteLine("💡 Для обычной торговли запустите без параметров");
                     return;
@@ -82,11 +100,15 @@ class Program
         // АВТОНОМНЫЙ РЕЖИМ ТОРГОВЛИ с автовосстановлением
         LoadEnvFile();
         
-        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 СИСТЕМА ЗАПУЩЕНА");
-
         // Загружаем ключи из .env
         var apiKey = Environment.GetEnvironmentVariable("BINANCE_API_KEY");
         var apiSecret = Environment.GetEnvironmentVariable("BINANCE_API_SECRET");
+
+        JsonLogger.SystemEvent("SYSTEM_START", "Bot system started", new Dictionary<string, object>
+        {
+            ["hasApiKeys"] = !string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(apiSecret),
+            ["startTime"] = DateTime.UtcNow
+        });
 
         if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(apiSecret))
         {
@@ -160,5 +182,200 @@ class Program
         Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🛑 Время работы: {uptime.TotalHours:F1} часов");
         
         Console.WriteLine("✅ Автономная торговая система завершена");
+    }
+
+    /// <summary>
+    /// Тестирование системы выбора монет
+    /// </summary>
+    static async Task TestCoinSelectionAsync()
+    {
+        LoadEnvFile();
+        
+        Console.WriteLine("🎯 ТЕСТ СИСТЕМЫ ВЫБОРА МОНЕТ");
+        Console.WriteLine("=============================");
+        
+        try
+        {
+            // Загружаем конфигурацию
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("config.json", optional: false, reloadOnChange: true)
+                .Build();
+
+            var backendConfig = BackendConfig.LoadFromConfiguration(configuration);
+            var coinSelectionConfig = CoinSelectionConfig.LoadFromConfiguration(configuration);
+
+            Console.WriteLine($"📊 Конфигурация выбора: {coinSelectionConfig}");
+            Console.WriteLine();
+
+            // Инициализируем сервисы (без API ключей для тестирования)
+            var restClient = new BinanceRestClient();
+            var dataStorage = new DataStorageService();
+            var binanceDataService = new BinanceDataService(restClient, backendConfig);
+            
+            var coinSelectionService = new CoinSelectionService(
+                coinSelectionConfig,
+                backendConfig,
+                dataStorage,
+                binanceDataService);
+
+            // Тестируем выбор монет
+            Console.WriteLine("🔍 Получение списка монет для торговли...");
+            var result = await coinSelectionService.GetTradingCoinsAsync();
+
+            if (result.Success)
+            {
+                Console.WriteLine($"✅ {result}");
+                Console.WriteLine($"📋 Выбранные монеты ({result.SelectedCoins.Count}):");
+                
+                foreach (var coin in result.SelectedCoins.Take(10)) // Показываем первые 10
+                {
+                    Console.WriteLine($"   💰 {coin.Symbol}: {coin.CurrentPrice:F4} USDT | Volume: {coin.Volume24h:N0}");
+                }
+                
+                if (result.SelectedCoins.Count > 10)
+                {
+                    Console.WriteLine($"   ... и еще {result.SelectedCoins.Count - 10} монет");
+                }
+
+                if (result.MissingSymbols.Any())
+                {
+                    Console.WriteLine($"⚠️ Не найдены: {string.Join(", ", result.MissingSymbols)}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"❌ Ошибка: {result.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"💥 Критическая ошибка: {ex.Message}");
+        }
+        
+        Console.WriteLine();
+        Console.WriteLine("✅ Тест выбора монет завершен");
+    }
+
+    /// <summary>
+    /// Тестирование OBIZ-Score стратегии
+    /// </summary>
+    static async Task TestOBIZStrategyAsync()
+    {
+        Console.WriteLine("🧠 ТЕСТ OBIZ-SCORE СТРАТЕГИИ");
+        Console.WriteLine("=============================");
+        
+        try
+        {
+            // Загружаем конфигурацию
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("config.json", optional: false, reloadOnChange: true)
+                .Build();
+
+            var obizConfig = OBIZStrategyConfig.LoadFromConfiguration(configuration);
+            var strategyConfig = StrategyConfig.LoadFromConfiguration(configuration);
+
+            Console.WriteLine($"📊 OBIZ конфигурация: {obizConfig}");
+            Console.WriteLine($"🎯 Режим стратегии: {strategyConfig.Mode}");
+            Console.WriteLine($"✅ OBIZ включена: {strategyConfig.EnableOBIZStrategy}");
+            Console.WriteLine();
+
+            // Запускаем тест интеграции
+            var test = new OBIZIntegrationTest();
+            var results = await test.RunFullIntegrationTestAsync();
+
+            Console.WriteLine();
+            Console.WriteLine("📊 РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ:");
+            Console.WriteLine($"   Базовые компоненты: {(results.BasicComponentsTest ? "✅" : "❌")}");
+            Console.WriteLine($"   Тиковые данные: {(results.TickDataTest ? "✅" : "❌")}");
+            Console.WriteLine($"   OBIZ стратегия: {(results.OBIZStrategyTest ? "✅" : "❌")}");
+            Console.WriteLine($"   Интегрированный сервис: {(results.IntegratedServiceTest ? "✅" : "❌")}");
+            Console.WriteLine($"   Управление позициями: {(results.PositionManagementTest ? "✅" : "❌")}");
+            Console.WriteLine();
+            Console.WriteLine($"🎯 ОБЩИЙ РЕЗУЛЬТАТ: {(results.OverallSuccess ? "✅ УСПЕХ" : "❌ ОШИБКА")}");
+
+            if (!results.OverallSuccess && !string.IsNullOrEmpty(results.ErrorMessage))
+            {
+                Console.WriteLine($"❌ Ошибка: {results.ErrorMessage}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("💡 Для активации OBIZ стратегии установите в config.json:");
+            Console.WriteLine("   \"Strategy\": { \"Mode\": \"OBIZOnly\", \"EnableOBIZStrategy\": true }");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"💥 Критическая ошибка: {ex.Message}");
+        }
+        
+        Console.WriteLine();
+        Console.WriteLine("✅ Тест OBIZ-Score стратегии завершен");
+    }
+
+    /// <summary>
+    /// Тестирование компонентов OBIZ-Score стратегии
+    /// </summary>
+    static async Task TestOBIZComponentsAsync()
+    {
+        Console.WriteLine("🧪 ТЕСТ КОМПОНЕНТОВ OBIZ-SCORE СТРАТЕГИИ");
+        Console.WriteLine("========================================");
+        
+        try
+        {
+            Console.WriteLine("Выберите тест:");
+            Console.WriteLine("1 - Trades (торговые данные)");
+            Console.WriteLine("2 - OrderBook (стакан заявок)");
+            Console.WriteLine("3 - WebSocket (реальные данные)");
+            Console.WriteLine("4 - Integration (интеграция всех компонентов)");
+            Console.WriteLine("5 - ALL (все тесты подряд)");
+            Console.WriteLine();
+            Console.Write("Введите номер теста (1-5): ");
+            
+            var input = Console.ReadLine();
+            
+            using var tester = new ComponentTester();
+            
+            switch (input)
+            {
+                case "1":
+                    Console.WriteLine("🎯 Запуск теста Trades...");
+                    await tester.TestTradesAsync("ETHUSDT");
+                    break;
+                    
+                case "2":
+                    Console.WriteLine("🎯 Запуск теста OrderBook...");
+                    await tester.TestOrderBookAsync("ETHUSDT");
+                    break;
+                    
+                case "3":
+                    Console.WriteLine("🎯 Запуск теста WebSocket...");
+                    Console.WriteLine("⚠️ Тест будет длиться 30 секунд...");
+                    await tester.TestWebSocketAsync("ETHUSDT", 30);
+                    break;
+                    
+                case "4":
+                    Console.WriteLine("🎯 Запуск теста Integration...");
+                    await tester.TestIntegrationAsync("ETHUSDT");
+                    break;
+                    
+                case "5":
+                    Console.WriteLine("🎯 Запуск всех тестов...");
+                    await tester.RunAllTestsAsync("ETHUSDT");
+                    break;
+                    
+                default:
+                    Console.WriteLine("❌ Неверный выбор, запускаем все тесты...");
+                    await tester.RunAllTestsAsync("ETHUSDT");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"💥 Критическая ошибка: {ex.Message}");
+        }
+        
+        Console.WriteLine();
+        Console.WriteLine("✅ Тест компонентов OBIZ-Score завершен");
     }
 }

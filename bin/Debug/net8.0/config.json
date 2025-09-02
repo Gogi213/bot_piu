@@ -14,9 +14,53 @@
     "MinTimeBetweenTradesMinutes": 0,
     "EnableAutoTrading": true
   },
+  "CoinSelection": {
+    "Mode": "Manual",
+    "ManualCoins": [
+      "TRUMPUSDT",
+      "ADAUSDT",
+      "SUIUSDT"
+    ],
+    "Description": "Mode: Auto (автоматический отбор) или Manual (только указанные монеты)"
+  },
+  "Strategy": {
+    "EnableLegacyStrategies": true,
+    "EnableOBIZStrategy": true,
+    "OBIZWeight": 1.0,
+    "Mode": "OBIZOnly"
+  },
+  "OBIZStrategy": {
+    "ZScoreThreshold": 1.5,
+    "StrongZScoreThreshold": 2.1,
+    "VWAPDeviationThreshold": 1.5,
+    "ZScoreWindow": 100,
+    "ActivityWindow": 200,
+    "EfficiencyWindow": 50,
+    "VWAPResetPeriod": 1000,
+    "ChoppyThreshold": 0.3,
+    "TrendingThreshold": 0.7,
+    "ActivityPercentileThreshold": 65,
+    "MinSamplesForPercentile": 100,
+    "BaseTakeProfit": 0.0013,
+    "BaseStopLoss": 0.001,
+
+    "PartialCloseRatio": 0.8,
+    "MaxHoldTimeSeconds": 120,
+    "MinRiskReward": 1.0,
+    "MaxRiskPerTrade": 0.02,
+    "MaxHistorySize": 2000,
+    "MinHistoryForCalculation": 50,
+    "OrderBookDepth": 10,
+    "EnableAdaptiveLevels": true,
+    "MinVolatilityMultiplier": 0.5,
+    "MaxVolatilityMultiplier": 3.0,
+    "EnableDetailedLogging": true,
+    "SaveSignalHistory": true,
+    "LoggingIntervalSeconds": 60
+  },
   "Backend": {
     "Port": 5000,
-    "MinVolumeUsdt": 30000000,
+    "MinVolumeUsdt": 100000000,
     "MinNatrPercent": 0.55,
     "NatrPeriods": 30,
     "HistoryCandles": 60,

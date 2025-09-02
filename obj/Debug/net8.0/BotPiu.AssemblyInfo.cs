@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BotPiu")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bbb86f216af9c6b78d57e3f547114dba0e33342c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fce718b25799ab99481e39b65d1c72e8c2196355")]
 [assembly: System.Reflection.AssemblyProductAttribute("BotPiu")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BotPiu")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

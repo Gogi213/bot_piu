@@ -7,9 +7,13 @@ using System.Security;
 using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Services;
+using Services.OBIZScore;
+using Services.OBIZScore.Config;
+using Services.OBIZScore.Core;
 using Config;
 using Binance.Net.Clients;
 using CryptoExchange.Net.Authentication;
+using Trading;
 
 namespace Services
 {
@@ -51,11 +55,13 @@ namespace Services
                 return;
             }
 
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 ЗАПУСК АВТОНОМНОГО ДВИЖКА");
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ================================");
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔄 Автовосстановление: ВКЛЮЧЕНО");
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🛡️ Максимум попыток: {MaxRestartAttempts} в {RestartCooldownHours} час(а)");
-            Console.WriteLine();
+            JsonLogger.SystemEvent("AUTONOMOUS_ENGINE_START", "Autonomous engine starting", new Dictionary<string, object>
+            {
+                ["autoRecovery"] = true,
+                ["maxRestartAttempts"] = MaxRestartAttempts,
+                ["restartCooldownHours"] = RestartCooldownHours,
+                ["restartDelays"] = _restartDelays
+            });
 
             _isRunning = true;
             
@@ -151,6 +157,8 @@ namespace Services
             var tradingConfig = TradingConfig.LoadFromConfiguration(configuration);
             var backendConfig = BackendConfig.LoadFromConfiguration(configuration);
             var autoTradingConfig = AutoTradingConfig.LoadFromConfiguration(configuration);
+            var coinSelectionConfig = CoinSelectionConfig.LoadFromConfiguration(configuration);
+            var strategyConfig = StrategyConfig.LoadFromConfiguration(configuration);
 
             // Создаем клиенты Binance
             var restClient = new BinanceRestClient(options =>
@@ -167,12 +175,20 @@ namespace Services
             var dataStorage = new DataStorageService();
             var binanceDataService = new BinanceDataService(restClient, backendConfig);
             
-            // 15-секундный сервис (опционально)
-            FifteenSecondCandleService? fifteenSecondService = null;
-            if (backendConfig.EnableFifteenSecondTrading)
+            // Сервис выбора монет
+            var coinSelectionService = new CoinSelectionService(
+                coinSelectionConfig,
+                backendConfig,
+                dataStorage,
+                binanceDataService);
+            
+            // 15-секундный сервис (обязательно для торговли)
+            if (!backendConfig.EnableFifteenSecondTrading)
             {
-                fifteenSecondService = new FifteenSecondCandleService(socketClient, dataStorage, backendConfig);
+                throw new Exception("15-секундная торговля обязательна - установите EnableFifteenSecondTrading = true в config.json");
             }
+            
+            var fifteenSecondService = new FifteenSecondCandleService(socketClient, dataStorage, backendConfig);
             
             var tradingStrategyService = new TradingStrategyService(backendConfig, fifteenSecondService);
 
@@ -234,20 +250,40 @@ namespace Services
                 }
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Соединение с Binance установлено");
 
-                // Первый сбор данных о монетах
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Сбор данных о монетах...");
+                // ПРОВЕРЯЕМ РЕЖИМ СТРАТЕГИИ СРАЗУ
+                if (strategyConfig.EnableOBIZStrategy && strategyConfig.Mode == StrategyMode.OBIZOnly)
+                {
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🧠 Запуск OBIZ-Score как автономного модуля...");
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ Пропускаем загрузку полного пула монет в OBIZ режиме");
+                    await RunOBIZAutonomousAsync(configuration, restClient, socketClient, dataStorage, binanceDataService, coinSelectionService, webSocketService);
+                    return; // OBIZ работает автономно, не запускаем Legacy систему
+                }
+
+                // Загрузка полного пула монет только для Legacy режима
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Сбор данных о монетах для Legacy режима...");
                 await universeUpdateService.UpdateUniverseAsync();
 
-                // Запускаем 15s сервис если включен
-                if (fifteenSecondService != null)
+                // Обязательно запускаем 15s сервис - это единственный режим торговли
+                if (fifteenSecondService == null)
                 {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 Запуск 15-секундных свечей...");
-                    // Получаем только отфильтрованные монеты по объёму и NATR
-                    var filteredCoins = dataStorage.GetFilteredCoins(backendConfig.MinVolumeUsdt, backendConfig.MinNatrPercent);
-                    var symbols = filteredCoins.Select(c => c.Symbol).ToList();
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Отобрано {symbols.Count} монет для 15s прогрева");
-                    await fifteenSecondService.StartAsync(symbols);
+                    throw new Exception("15-секундная торговля обязательна, но сервис не инициализирован");
                 }
+                
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 Запуск 15-секундных свечей...");
+                
+                // Логируем режим выбора монет
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 Режим выбора монет: {coinSelectionService.GetConfigInfo()}");
+                
+                // Получаем монеты через сервис выбора
+                var coinSelectionResult = await coinSelectionService.GetTradingCoinsAsync();
+                if (!coinSelectionResult.Success)
+                {
+                    throw new Exception($"Ошибка выбора монет для торговли: {coinSelectionResult.ErrorMessage}");
+                }
+                
+                var symbols = coinSelectionResult.SelectedCoins.Select(c => c.Symbol).ToList();
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Отобрано {symbols.Count} монет: {coinSelectionResult.SelectionCriteria}");
+                await fifteenSecondService.StartAsync(symbols);
 
                 // Запускаем HFT движок
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ Запуск HFT движка сигналов...");
@@ -257,50 +293,57 @@ namespace Services
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 Запуск автоматической торговли...");
                 await autoTradingService.StartAsync();
 
-                Console.WriteLine();
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 АВТОМАТИЧЕСКАЯ ТОРГОВЛЯ ЗАПУЩЕНА!");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] =====================================");
-                if (backendConfig.EnableFifteenSecondTrading)
-                {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 Режим: 15-СЕКУНДНАЯ ТОРГОВЛЯ");
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⏱️ Прогрев: {backendConfig.FifteenSecondWarmupCandles} свечей");
-                }
-                else
-                {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🕐 Режим: 1-МИНУТНАЯ ТОРГОВЛЯ");
-                }
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] Система будет:");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] • Мониторить рынок 24/7");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] • Генерировать торговые сигналы");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] • Автоматически открывать/закрывать позиции");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] • Управлять рисками и лимитами");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] • Автоматически восстанавливаться после ошибок");
-                Console.WriteLine();
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Автоматическая торговля запущена (15s режим)");
 
                 // Сброс счетчика попыток при успешном запуске
                 _restartAttempts = 0;
 
-                // Периодическое обновление пула монет
+                // Упрощенная интеграция lifecycle с обновлением NATR
+                webSocketService.OnNatrUpdate += async (symbol, natr) =>
+                {
+                    if (natr.HasValue)
+                    {
+                        var coinsToExclude = dataStorage.UpdateCoinNatrWithLifecycle(symbol, natr.Value, backendConfig.MinNatrPercent);
+                        
+                        // Если есть монеты для исключения - обрабатываем
+                        if (coinsToExclude.Count > 0)
+                        {
+                            try
+                            {
+                                await fifteenSecondService.RemoveSymbolsAsync(coinsToExclude);
+                                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚫 Исключено монет: {coinsToExclude.Count}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка исключения монет: {ex.Message}");
+                            }
+                        }
+                    }
+                };
+
+                // Периодическое обновление пула монет (только поиск новых)
                 var updateTimer = new Timer(async _ =>
                 {
                     try
                     {
-                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔄 Обновление пула монет...");
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔄 Поиск новых монет...");
                         await universeUpdateService.UpdateUniverseAsync();
                         
-                        // Получаем новый список монет
-                        var filteredCoins = dataStorage.GetFilteredCoins(backendConfig.MinVolumeUsdt, backendConfig.MinNatrPercent);
-                        var newSymbols = filteredCoins.Take(20).Select(c => c.Symbol).ToList(); // Ограничиваем до 20
+                        // Получаем активные монеты для 15s торговли
+                        var activeSymbols = dataStorage.GetActiveTradingCoins(backendConfig.MinVolumeUsdt, backendConfig.MinNatrPercent);
 
-                        // Умное обновление 15s сервиса - сохраняем прогретые данные
-                        if (fifteenSecondService != null)
+                        // Обновляем 15s сервис с активными монетами
+                        if (fifteenSecondService != null && activeSymbols.Count > 0)
                         {
-                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔥 Умное обновление 15s: {newSymbols.Count} монет");
-                            await fifteenSecondService.UpdateSymbolsAsync(newSymbols);
+                            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 🔥 Обновление 15s пула: {activeSymbols.Count} активных монет");
+                            await fifteenSecondService.UpdateSymbolsAsync(activeSymbols);
                         }
 
-                        // TODO: Обновление WebSocket подписок для новых монет
-                        // (пока оставляем как есть, можно реализовать позже)
+                        // Простая статистика
+                        var allCoins = dataStorage.GetAllCoins();
+                        var activeCount = activeSymbols.Count;
+                        var totalCount = allCoins.Count;
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] 📊 Пул: {activeCount}/{totalCount} активных монет");
                         
                         Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] ✅ Пул обновлен");
                     }
@@ -391,6 +434,186 @@ namespace Services
                 MaxRestartAttempts = MaxRestartAttempts,
                 RestartCooldownHours = RestartCooldownHours
             };
+        }
+
+        /// <summary>
+        /// Запуск OBIZ-Score как автономного модуля
+        /// </summary>
+        private async Task RunOBIZAutonomousAsync(
+            IConfiguration configuration,
+            BinanceRestClient restClient,
+            BinanceSocketClient socketClient,
+            DataStorageService dataStorage,
+            BinanceDataService binanceDataService,
+            CoinSelectionService coinSelectionService,
+            MultiSymbolWebSocketService webSocketService)
+        {
+            var obizConfig = OBIZStrategyConfig.LoadFromConfiguration(configuration);
+            var tradingConfig = TradingConfig.LoadFromConfiguration(configuration);
+            var autoTradingConfig = AutoTradingConfig.LoadFromConfiguration(configuration);
+            var coinSelectionConfig = CoinSelectionConfig.LoadFromConfiguration(configuration);
+            var backendConfig = BackendConfig.LoadFromConfiguration(configuration);
+
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 OBIZ Autonomous Mode Activated");
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Configuration: {obizConfig}");
+
+            // Создаем автономный OBIZ сервис
+            var obizService = new OBIZAutonomousService(
+                obizConfig,
+                backendConfig,
+                tradingConfig,
+                autoTradingConfig,
+                coinSelectionConfig,
+                dataStorage,
+                binanceDataService,
+                coinSelectionService,
+                webSocketService);
+
+            // Подписываемся на события
+            obizService.OnOBIZSignal += async (symbol, signal) =>
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 OBIZ SIGNAL: {symbol} {signal.Direction} | " +
+                                 $"Score: {signal.OBIZScore:F2} | Confidence: {signal.Confidence} | Regime: {signal.Regime}");
+                
+                // Логируем в JSON файл тоже
+                Services.OBIZScore.OBIZJsonLogger.Log("INFO", "AUTONOMOUS_ENGINE", 
+                    $"🎯 OBIZ SIGNAL RECEIVED: {symbol} {signal.Direction} | Score: {signal.OBIZScore:F2}");
+                
+                // 🚀 СОЗДАЕМ РЕАЛЬНУЮ СДЕЛКУ ЧЕРЕЗ TradingModule
+                await CreateOBIZTradeAsync(restClient, socketClient, symbol, signal, tradingConfig);
+            };
+
+            obizService.OnPositionOpened += (symbol, direction) =>
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ OBIZ POSITION OPENED: {symbol} {direction}");
+            };
+
+            obizService.OnPositionClosed += (symbol, result) =>
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🏁 OBIZ POSITION CLOSED: {symbol} ({result})");
+            };
+
+            obizService.OnError += (message) =>
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ OBIZ ERROR: {message}");
+            };
+
+            // Запускаем OBIZ сервис
+            var started = await obizService.StartAsync();
+            if (!started)
+            {
+                throw new Exception("Failed to start OBIZ Autonomous Service");
+            }
+
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ OBIZ Autonomous Service running successfully!");
+
+            // Главный цикл мониторинга
+            try
+            {
+                while (_shouldRun)
+                {
+                    await Task.Delay(5000); // Проверяем каждые 5 секунд
+
+                    // Показываем статистику каждые 30 секунд
+                    if (DateTime.UtcNow.Second % 30 == 0)
+                    {
+                        var stats = obizService.GetStats();
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 OBIZ Status: " +
+                                         $"Strategies: {stats.ActiveStrategies}, " +
+                                         $"Positions: {stats.PositionStats.TotalOpenPositions}/{stats.PositionStats.MaxAllowedPositions}, " +
+                                         $"Symbols: {stats.ActiveSymbols}");
+                    }
+                }
+            }
+            finally
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🛑 Stopping OBIZ Autonomous Service...");
+                await obizService.StopAsync();
+                obizService.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Создание реальной сделки для OBIZ сигнала через TradingModule
+        /// </summary>
+        private async Task CreateOBIZTradeAsync(
+            BinanceRestClient restClient,
+            BinanceSocketClient socketClient,
+            string symbol,
+            OBIZSignal signal,
+            TradingConfig tradingConfig)
+        {
+            try
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔄 Creating real trade for OBIZ signal: {symbol} {signal.Direction}");
+                Services.OBIZScore.OBIZJsonLogger.Log("INFO", "AUTONOMOUS_ENGINE", 
+                    $"🔄 Creating real trade for OBIZ signal: {symbol} {signal.Direction}");
+
+                // Конвертируем OBIZ сигнал в формат для TradingModule
+                var side = signal.Direction == TradeDirection.Buy ? "BUY" : "SELL";
+                
+                // Создаем конфигурацию для TradingModule на основе OBIZ сигнала
+                var obizTradingConfig = new TradingConfig
+                {
+                    Symbol = symbol,
+                    Side = side,
+                    UsdAmount = tradingConfig.UsdAmount, // Используем размер из основной конфигурации
+                    TakeProfitPercent = CalculateOBIZTakeProfit(signal),
+                    StopLossPercent = CalculateOBIZStopLoss(signal),
+                    EnableBreakEven = tradingConfig.EnableBreakEven,
+                    BreakEvenActivationPercent = tradingConfig.BreakEvenActivationPercent,
+                    BreakEvenStopLossPercent = tradingConfig.BreakEvenStopLossPercent,
+                    TickSize = 0.0001m, // Будет скорректировано TradingModule
+                    MonitorIntervalSeconds = tradingConfig.MonitorIntervalSeconds
+                };
+
+                // Создаем и запускаем TradingModule
+                var tradingModule = new Trading.TradingModule(restClient, socketClient, obizTradingConfig);
+                
+                // Запускаем торговлю в фоновом режиме
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await tradingModule.ExecuteTradeAsync();
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ OBIZ trade completed: {symbol}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ OBIZ trade error {symbol}: {ex.Message}");
+                    }
+                });
+
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 OBIZ trade launched: {symbol} {side} | TP: {obizTradingConfig.TakeProfitPercent:P2} | SL: {obizTradingConfig.StopLossPercent:P2}");
+                Services.OBIZScore.OBIZJsonLogger.Log("INFO", "AUTONOMOUS_ENGINE", 
+                    $"🚀 OBIZ trade launched: {symbol} {side} | TP: {obizTradingConfig.TakeProfitPercent:P2} | SL: {obizTradingConfig.StopLossPercent:P2}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Failed to create OBIZ trade for {symbol}: {ex.Message}");
+                Services.OBIZScore.OBIZJsonLogger.Log("ERROR", "AUTONOMOUS_ENGINE", 
+                    $"❌ Failed to create OBIZ trade for {symbol}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Расчет Take Profit для OBIZ сигнала
+        /// </summary>
+        private decimal CalculateOBIZTakeProfit(OBIZSignal signal)
+        {
+            // Используем расстояние от entry до TP из OBIZ сигнала
+            var tpDistance = Math.Abs(signal.TPPrice - signal.EntryPrice) / signal.EntryPrice;
+            return tpDistance;
+        }
+
+        /// <summary>
+        /// Расчет Stop Loss для OBIZ сигнала
+        /// </summary>
+        private decimal CalculateOBIZStopLoss(OBIZSignal signal)
+        {
+            // Используем расстояние от entry до SL из OBIZ сигнала
+            var slDistance = Math.Abs(signal.EntryPrice - signal.SLPrice) / signal.EntryPrice;
+            return slDistance;
         }
     }
 

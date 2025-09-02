@@ -8,7 +8,7 @@ using Config;
 namespace Services
 {
     /// <summary>
-    /// Состояние сигналов для edge-detection как в бэктестере
+    /// Состояние сигналов (оставлено для совместимости, но больше не используется в линейной логике)
     /// </summary>
     public class SignalState
     {
@@ -20,7 +20,7 @@ namespace Services
     public class TradingStrategyService
     {
         private readonly BackendConfig _config;
-        private readonly ConcurrentDictionary<string, SignalState> _signalStates = new();
+        private readonly ConcurrentDictionary<string, SignalState> _signalStates = new(); // Не используется в линейной логике
         private readonly FifteenSecondCandleService? _fifteenSecondService;
 
         public TradingStrategyService(BackendConfig config, FifteenSecondCandleService? fifteenSecondService = null)
@@ -30,17 +30,23 @@ namespace Services
         }
 
         /// <summary>
-        /// Анализ торговых сигналов для монеты с использованием двойной стратегии
+        /// Анализ торговых сигналов для монеты - только 15-секундная торговля
         /// </summary>
         public StrategyResult AnalyzeCoin(CoinData coinData)
         {
-            // Если включена 15-секундная торговля, используем её
+            // Только 15-секундная торговля для сигналов
             if (_config.EnableFifteenSecondTrading && _fifteenSecondService != null)
             {
                 return AnalyzeCoinFifteenSecond(coinData);
             }
             
-            return AnalyzeCoinOneMinute(coinData);
+            // Если 15s торговля отключена - возвращаем FLAT (торговля отключена)
+            return new StrategyResult
+            {
+                Symbol = coinData?.Symbol ?? "UNKNOWN",
+                FinalSignal = "FLAT",
+                Reason = "15-секундная торговля отключена - торговые сигналы недоступны"
+            };
         }
 
         /// <summary>
@@ -106,106 +112,45 @@ namespace Services
             result.Sma = smaScore;
             result.SmaSignal = smaSignal;
 
-            // Комбинированный сигнал с edge-detection как в бэктестере
-            result.FinalSignal = CombineSignalsWithEdgeDetection(coinData.Symbol, result.ZScoreSignal, result.SmaSignal);
+            // Линейная комбинация сигналов - генерирует сигнал на каждой подходящей свече
+            result.FinalSignal = CombineSignalsLinear(coinData.Symbol, result.ZScoreSignal, result.SmaSignal);
             result.Reason = GetSignalReason(result.ZScoreSignal, result.SmaSignal, result.ZScore, coinData.CurrentPrice, result.Sma) + " (15s)";
 
             return result;
         }
 
-        /// <summary>
-        /// Анализ на 1-минутных свечах (старый метод)
-        /// </summary>
-        private StrategyResult AnalyzeCoinOneMinute(CoinData coinData)
-        {
-            if (coinData?.RecentCandles == null || coinData.RecentCandles.Count < Math.Max(_config.ZScoreSmaPeriod, _config.StrategySmaPeriod))
-            {
-                return new StrategyResult
-                {
-                    Symbol = coinData?.Symbol ?? "UNKNOWN",
-                    FinalSignal = "FLAT",
-                    Reason = "Недостаточно данных для анализа"
-                };
-            }
 
-            var result = new StrategyResult
-            {
-                Symbol = coinData.Symbol,
-                CurrentPrice = coinData.CurrentPrice,
-                Natr = coinData.Natr ?? 0,
-                Timestamp = DateTime.UtcNow
-            };
-
-            // Стратегия 1: Z-Score (Mean Reversion)
-            var (zScore, zScoreSignal) = TechnicalAnalysisService.CalculateZScoreSma(
-                coinData.RecentCandles, 
-                _config.ZScoreSmaPeriod, 
-                _config.ZScoreThreshold);
-
-            result.ZScore = zScore;
-            result.ZScoreSignal = zScoreSignal;
-
-            // Стратегия 2: SMA Trend Following
-            var (sma, smaSignal) = TechnicalAnalysisService.CalculateSmaStrategy(
-                coinData.RecentCandles, 
-                _config.StrategySmaPeriod);
-
-            result.Sma = sma;
-            result.SmaSignal = smaSignal;
-
-            // Комбинированная логика с edge-detection как в бэктестере
-            result.FinalSignal = CombineSignalsWithEdgeDetection(coinData.Symbol, zScoreSignal, smaSignal);
-            result.Reason = GetSignalReason(zScoreSignal, smaSignal, zScore, coinData.CurrentPrice, sma);
-
-            return result;
-        }
 
         /// <summary>
-        /// Комбинирование сигналов с edge-detection как в бэктестере
+        /// Линейная комбинация сигналов без edge-detection - генерирует сигнал на каждой подходящей свече
         /// </summary>
-        private string CombineSignalsWithEdgeDetection(string symbol, string zScoreSignal, string smaSignal)
+        private string CombineSignalsLinear(string symbol, string zScoreSignal, string smaSignal)
         {
-            // Убрано избыточное логирование анализа
-
-            // Получаем или создаем состояние для этой монеты
-            var state = _signalStates.GetOrAdd(symbol, _ => new SignalState());
-
-            // Текущие условия как в бэктестере
+            // Простая линейная логика: если оба условия выполнены - генерируем сигнал
             bool currentLongCondition = smaSignal == "LONG" && zScoreSignal == "LONG";   // (close > SMA) & (Z <= -threshold)
             bool currentShortCondition = smaSignal == "SHORT" && zScoreSignal == "SHORT"; // (close < SMA) & (Z >= +threshold)
 
-            // Edge-detection: сигнал только при первом появлении условия
-            bool rawLong = currentLongCondition && !state.PreviousLongCondition;
-            bool rawShort = currentShortCondition && !state.PreviousShortCondition;
-
-            // Исключаем одновременные сигналы (как в бэктестере)
-            if (rawLong && rawShort)
+            // Исключаем одновременные сигналы
+            if (currentLongCondition && currentShortCondition)
             {
-                rawLong = false;
-                rawShort = false;
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ КОНФЛИКТ: {symbol} Одновременные LONG и SHORT - игнорируем");
+                return "FLAT";
             }
 
-            // Обновляем состояние
-            state.PreviousLongCondition = currentLongCondition;
-            state.PreviousShortCondition = currentShortCondition;
-            state.LastUpdate = DateTime.UtcNow;
-
-            // Возвращаем сигнал
-            if (rawLong)
+            // Возвращаем сигнал на каждой подходящей свече
+            if (currentLongCondition)
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 EDGE LONG СИГНАЛ: {symbol}");
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 LINEAR LONG СИГНАЛ: {symbol}");
                 return "LONG";
             }
             
-            if (rawShort)
+            if (currentShortCondition)
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 EDGE SHORT СИГНАЛ: {symbol}");
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔥 LINEAR SHORT СИГНАЛ: {symbol}");
                 return "SHORT";
             }
 
-            // Нет новых сигналов
-            // Убрано избыточное логирование FLAT
+            // Условия не выполнены
             return "FLAT";
         }
 

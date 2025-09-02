@@ -11,3 +11,76 @@
 [2025-08-29 03:56:48.004] STATE_SAVE_ERROR: The process cannot access the file 'C:\visual projects\bot_piu\bot_state.json' because it is being used by another process.
 [2025-08-29 03:56:51.297] TRADE_COMPLETED: CTSIUSDT SELL 8,0USDT -> Completed (Duration: 0,1min)
 [2025-08-29 03:56:51.407] TRADE_COMPLETED: FLOWUSDT BUY 8,0USDT -> Completed (Duration: 0,1min)
+[2025-08-29 18:53:53.207] TRADE_COMPLETED: WLFIUSDT BUY 8,0USDT -> Completed (Duration: 13,1min)
+[2025-08-29 19:01:21.306] TRADE_COMPLETED: LEVERUSDT BUY 8,0USDT -> Completed (Duration: 0,6min)
+[2025-08-29 19:01:44.634] TRADE_COMPLETED: BASUSDT BUY 8,0USDT -> Completed (Duration: 2,5min)
+[2025-08-29 19:16:24.708] TRADE_COMPLETED: HEMIUSDT SELL 8,0USDT -> Completed (Duration: 4,6min)
+[2025-08-29 19:16:28.822] TRADE_COMPLETED: TAUSDT BUY 8,0USDT -> Completed (Duration: 4,5min)
+[2025-08-29 19:20:37.004] TRADE_COMPLETED: PYTHUSDT BUY 8,0USDT -> Completed (Duration: 14,3min)
+[2025-08-29 19:26:24.369] TRADE_COMPLETED: MUSDT BUY 8,0USDT -> Completed (Duration: 12,6min)
+[2025-08-29 19:27:57.413] TRADE_COMPLETED: LEVERUSDT SELL 8,0USDT -> Completed (Duration: 22,6min)
+[2025-08-29 19:56:31.012] TRADE_COMPLETED: MUSDT SELL 8,0USDT -> Completed (Duration: 7,2min)
+[2025-08-29 20:03:02.652] TRADE_COMPLETED: CATIUSDT SELL 8,0USDT -> Completed (Duration: 19,0min)
+[2025-08-29 20:04:06.123] TRADE_COMPLETED: FARTCOINUSDT BUY 8,0USDT -> Completed (Duration: 52,4min)
+[2025-08-29 20:23:40.703] TRADE_COMPLETED: BTRUSDT BUY 8,0USDT -> Completed (Duration: 93,6min)
+[2025-08-29 20:53:26.023] TRADE_COMPLETED: BBUSDT SELL 8,0USDT -> Completed (Duration: 13,4min)
+[2025-08-29 21:18:10.282] TRADE_COMPLETED: PYTHUSDT SELL 8,0USDT -> Completed (Duration: 55,4min)
+[2025-08-29 21:26:53.829] TRADE_COMPLETED: SPKUSDT SELL 8,0USDT -> Completed (Duration: 3,1min)
+[2025-08-29 21:39:19.247] TRADE_COMPLETED: MAVUSDT SELL 8,0USDT -> Completed (Duration: 159,0min)
+[2025-08-29 22:11:05.663] TRADE_COMPLETED: BBUSDT BUY 8,0USDT -> Completed (Duration: 26,1min)
+[2025-08-29 22:52:38.478] TRADE_COMPLETED: 1000BONKUSDT SELL 8,0USDT -> Completed (Duration: 14,9min)
+[2025-08-29 23:08:28.622] TRADE_COMPLETED: USELESSUSDT BUY 8,0USDT -> Completed (Duration: 3,9min)
+[2025-08-29 23:30:41.569] TRADE_COMPLETED: 1000BONKUSDT BUY 8,0USDT -> Completed (Duration: 17,7min)
+[2025-08-29 23:42:11.445] TRADE_COMPLETED: 1000BONKUSDT SELL 8,0USDT -> Completed (Duration: 4,6min)
+[2025-08-30 00:08:06.237] TRADE_COMPLETED: PYTHUSDT BUY 8,0USDT -> Completed (Duration: 17,8min)
+[2025-08-30 00:41:15.981] TRADE_COMPLETED: PYTHUSDT SELL 8,0USDT -> Completed (Duration: 5,3min)
+[2025-08-30 00:57:03.724] TRADE_COMPLETED: DOLOUSDT BUY 8,0USDT -> Completed (Duration: 230,3min)
+[2025-08-30 01:07:08.416] TRADE_COMPLETED: PYTHUSDT BUY 8,0USDT -> Completed (Duration: 21,4min)
+[2025-08-30 02:21:04.713] TRADE_COMPLETED: PYTHUSDT SELL 8,0USDT -> Completed (Duration: 51,1min)
+[2025-08-30 02:27:45.474] TRADE_COMPLETED: SAPIENUSDT SELL 8,0USDT -> Completed (Duration: 17,2min)
+[2025-08-31 21:35:55.853] TRADE_COMPLETED: HEMIUSDT BUY 8,0USDT -> Completed (Duration: 11,2min)
+[2025-09-01 04:43:30.152] SYSTEM_CRASH: Attempt 1: Failed to convert configuration value at 'CoinSelection:Mode' to type 'Config.CoinSelectionMode'.
+StackTrace:    at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperty(PropertyInfo property, Object instance, IConfiguration config, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperties(Object instance, IConfiguration configuration, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(IConfiguration configuration, Object instance, Action`1 configureOptions)
+   at Config.CoinSelectionConfig.LoadFromConfiguration(IConfiguration configuration) in C:\visual projects\bot_piu\TradingConfig.cs:line 120
+   at Services.AutonomousEngine.RunTradingSystemAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 158
+   at Services.AutonomousEngine.StartAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 83
+[2025-09-01 04:43:35.216] SYSTEM_CRASH: Attempt 2: Failed to convert configuration value at 'CoinSelection:Mode' to type 'Config.CoinSelectionMode'.
+StackTrace:    at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperty(PropertyInfo property, Object instance, IConfiguration config, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperties(Object instance, IConfiguration configuration, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(IConfiguration configuration, Object instance, Action`1 configureOptions)
+   at Config.CoinSelectionConfig.LoadFromConfiguration(IConfiguration configuration) in C:\visual projects\bot_piu\TradingConfig.cs:line 120
+   at Services.AutonomousEngine.RunTradingSystemAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 158
+   at Services.AutonomousEngine.StartAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 83
+[2025-09-01 04:43:45.294] SYSTEM_CRASH: Attempt 3: Failed to convert configuration value at 'CoinSelection:Mode' to type 'Config.CoinSelectionMode'.
+StackTrace:    at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperty(PropertyInfo property, Object instance, IConfiguration config, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperties(Object instance, IConfiguration configuration, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(IConfiguration configuration, Object instance, Action`1 configureOptions)
+   at Config.CoinSelectionConfig.LoadFromConfiguration(IConfiguration configuration) in C:\visual projects\bot_piu\TradingConfig.cs:line 120
+   at Services.AutonomousEngine.RunTradingSystemAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 158
+   at Services.AutonomousEngine.StartAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 83
+[2025-09-01 04:44:15.515] SYSTEM_CRASH: Attempt 4: Failed to convert configuration value at 'CoinSelection:Mode' to type 'Config.CoinSelectionMode'.
+StackTrace:    at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperty(PropertyInfo property, Object instance, IConfiguration config, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperties(Object instance, IConfiguration configuration, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(IConfiguration configuration, Object instance, Action`1 configureOptions)
+   at Config.CoinSelectionConfig.LoadFromConfiguration(IConfiguration configuration) in C:\visual projects\bot_piu\TradingConfig.cs:line 120
+   at Services.AutonomousEngine.RunTradingSystemAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 158
+   at Services.AutonomousEngine.StartAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 83
+[2025-09-01 04:45:15.984] SYSTEM_CRASH: Attempt 5: Failed to convert configuration value at 'CoinSelection:Mode' to type 'Config.CoinSelectionMode'.
+StackTrace:    at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperty(PropertyInfo property, Object instance, IConfiguration config, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindProperties(Object instance, IConfiguration configuration, BinderOptions options)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.BindInstance(Type type, BindingPoint bindingPoint, IConfiguration config, BinderOptions options, Boolean isParentCollection)
+   at Microsoft.Extensions.Configuration.ConfigurationBinder.Bind(IConfiguration configuration, Object instance, Action`1 configureOptions)
+   at Config.CoinSelectionConfig.LoadFromConfiguration(IConfiguration configuration) in C:\visual projects\bot_piu\TradingConfig.cs:line 120
+   at Services.AutonomousEngine.RunTradingSystemAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 158
+   at Services.AutonomousEngine.StartAsync() in C:\visual projects\bot_piu\Services\AutonomousEngine.cs:line 83

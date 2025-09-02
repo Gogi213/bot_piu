@@ -158,7 +158,7 @@ namespace Services
                     // Уведомляем подписчиков
                     OnFifteenSecondCandle?.Invoke(symbol, candle);
 
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🕐 15s {symbol}: {candle.Close:F6} ({candles.Count}/{_config.FifteenSecondWarmupCandles})");
+                    // Убрали лог цен - слишком много шума
                 }
             }
         }
@@ -178,6 +178,34 @@ namespace Services
         {
             return _fifteenSecondCandles.TryGetValue(symbol, out var candles) && 
                    candles.Count >= _config.FifteenSecondWarmupCandles;
+        }
+
+        /// <summary>
+        /// Удаление конкретных символов из 15s мониторинга
+        /// </summary>
+        public async Task RemoveSymbolsAsync(List<string> symbolsToRemove)
+        {
+            if (!_isRunning || symbolsToRemove.Count == 0) return;
+
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚫 Удаление 15s символов: {symbolsToRemove.Count} монет");
+
+            foreach (var symbol in symbolsToRemove)
+            {
+                if (_aggTradeSubscriptions.TryRemove(symbol, out var subscription))
+                {
+                    try
+                    {
+                        await subscription.CloseAsync();
+                        _candleBuilders.TryRemove(symbol, out _);
+                        _fifteenSecondCandles.TryRemove(symbol, out _);
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ➖ Удален 15s: {symbol} (исключен из пула)");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка закрытия подписки {symbol}: {ex.Message}");
+                    }
+                }
+            }
         }
 
         /// <summary>

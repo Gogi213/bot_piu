@@ -1,0 +1,680 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+
+// ОСНОВНЫЕ СТРУКТУРЫ ДАННЫХ
+public struct TickData
+{
+    public DateTime Timestamp { get; set; }
+    public decimal Price { get; set; }
+    public long Volume { get; set; }
+    public decimal BestBid { get; set; }
+    public decimal BestAsk { get; set; }
+    public long BidSize { get; set; }
+    public long AskSize { get; set; }
+    public OrderBookLevel[] Bids { get; set; } // Топ 10 уровней
+    public OrderBookLevel[] Asks { get; set; } // Топ 10 уровней
+    public TradeDirection Direction { get; set; } // Buy/Sell агрессор
+}
+
+public struct OrderBookLevel
+{
+    public decimal Price { get; set; }
+    public long Size { get; set; }
+}
+
+public enum TradeDirection { Buy, Sell, Unknown }
+
+public struct Signal
+{
+    public TradeDirection Direction { get; set; }
+    public SignalConfidence Confidence { get; set; }
+    public decimal EntryPrice { get; set; }
+    public decimal TPPrice { get; set; }
+    public decimal SLPrice { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
+public enum SignalConfidence { Low, Medium, High }
+
+// ГЛАВНЫЙ КЛАСС СТРАТЕГИИ
+public class OBIZScoreStrategy
+{
+    // КОНФИГУРАЦИЯ
+    private readonly StrategyConfig _config;
+    
+    // СОСТОЯНИЕ
+    private readonly CircularBuffer<TickData> _tickHistory;
+    private readonly CircularBuffer<decimal> _priceHistory;
+    private readonly CircularBuffer<long> _volumeHistory;
+    private readonly CircularBuffer<decimal> _imbalanceHistory;
+    
+    // СТАТИСТИКИ
+    private RollingStatistics _imbalanceStats;
+    private RollingStatistics _activityStats;
+    private decimal _currentVWAP;
+    private long _vwapVolume;
+    private decimal _vwapSum;
+    
+    // ТЕКУЩИЕ МЕТРИКИ
+    private decimal _lastOBIZScore;
+    private decimal _lastActivityScore;
+    private decimal _lastEfficiencyRatio;
+    private decimal _lastVWAPDeviation;
+    
+    // ПОЗИЦИЯ
+    private Position _currentPosition;
+    
+    public OBIZScoreStrategy(StrategyConfig config)
+    {
+        _config = config;
+        _tickHistory = new CircularBuffer<TickData>(_config.MaxHistorySize);
+        _priceHistory = new CircularBuffer<decimal>(_config.MaxHistorySize);
+        _volumeHistory = new CircularBuffer<long>(_config.MaxHistorySize);
+        _imbalanceHistory = new CircularBuffer<decimal>(_config.MaxHistorySize);
+        _imbalanceStats = new RollingStatistics(_config.ZScoreWindow);
+        _activityStats = new RollingStatistics(_config.ActivityWindow);
+        _currentPosition = new Position();
+    }
+    
+    // ГЛАВНЫЙ МЕТОД - ОБРАБОТКА ТИКА
+    public async Task<TradingDecision> OnTickAsync(TickData tick)
+    {
+        try
+        {
+            // 1. ОБНОВЛЕНИЕ ИСТОРИИ
+            UpdateHistory(tick);
+            
+            // 2. РАСЧЕТ МЕТРИК
+            UpdateMetrics(tick);
+            
+            // 3. ПРОВЕРКА УСЛОВИЙ
+            if (_currentPosition.IsOpen)
+            {
+                return await ManagePositionAsync(tick);
+            }
+            else
+            {
+                var signal = CheckEntryConditions(tick);
+                if (signal.HasValue)
+                {
+                    return new TradingDecision 
+                    { 
+                        Action = TradingAction.OpenPosition,
+                        Signal = signal.Value 
+                    };
+                }
+            }
+            
+            return TradingDecision.NoAction;
+        }
+        catch (Exception ex)
+        {
+            // Логирование ошибки
+            LogError($"Error in OnTick: {ex.Message}");
+            return TradingDecision.NoAction;
+        }
+    }
+    
+    // ОБНОВЛЕНИЕ ИСТОРИИ ДАННЫХ
+    private void UpdateHistory(TickData tick)
+    {
+        _tickHistory.Add(tick);
+        
+        // Weighted Mid Price для уменьшения шума
+        decimal weightedMidPrice = CalculateWeightedMidPrice(tick);
+        _priceHistory.Add(weightedMidPrice);
+        _volumeHistory.Add(tick.Volume);
+        
+        // Обновление VWAP
+        _vwapSum += weightedMidPrice * tick.Volume;
+        _vwapVolume += tick.Volume;
+        _currentVWAP = _vwapSum / Math.Max(_vwapVolume, 1);
+        
+        // Сброс VWAP каждые N тиков (например, каждые 1000)
+        if (_tickHistory.Count % _config.VWAPResetPeriod == 0)
+        {
+            _vwapSum = 0;
+            _vwapVolume = 0;
+        }
+    }
+    
+    // РАСЧЕТ ВСЕХ МЕТРИК
+    private void UpdateMetrics(TickData tick)
+    {
+        if (_tickHistory.Count < _config.MinHistoryForCalculation)
+            return;
+            
+        // 1. OBI Z-Score
+        _lastOBIZScore = CalculateOBIZScore(tick);
+        
+        // 2. Activity Score
+        _lastActivityScore = CalculateActivityScore();
+        
+        // 3. Efficiency Ratio
+        _lastEfficiencyRatio = CalculateEfficiencyRatio();
+        
+        // 4. VWAP Deviation
+        _lastVWAPDeviation = CalculateVWAPDeviation(tick);
+        
+        // Обновление статистик
+        _imbalanceStats.Add(_lastOBIZScore);
+        _activityStats.Add(_lastActivityScore);
+    }
+    
+    // РАСЧЕТ OBI Z-SCORE
+    private decimal CalculateOBIZScore(TickData tick)
+    {
+        if (tick.Bids?.Length < 5 || tick.Asks?.Length < 5)
+            return 0;
+            
+        // Суммируем объемы на ±5 уровнях
+        long buyVolume = tick.Bids.Take(5).Sum(b => b.Size);
+        long sellVolume = tick.Asks.Take(5).Sum(a => a.Size);
+        long totalVolume = buyVolume + sellVolume;
+        
+        if (totalVolume == 0) return 0;
+        
+        // Order Book Imbalance
+        decimal imbalance = (decimal)(buyVolume - sellVolume) / totalVolume;
+        _imbalanceHistory.Add(imbalance);
+        
+        // Z-Score с адаптивными параметрами
+        if (_imbalanceHistory.Count < _config.ZScoreWindow)
+            return 0;
+            
+        var recentImbalances = _imbalanceHistory.TakeLast(_config.ZScoreWindow);
+        decimal mean = recentImbalances.Average();
+        decimal stdDev = CalculateStandardDeviation(recentImbalances, mean);
+        
+        return stdDev > 0 ? (imbalance - mean) / stdDev : 0;
+    }
+    
+    // РАСЧЕТ ACTIVITY SCORE
+    private decimal CalculateActivityScore()
+    {
+        int window = Math.Min(_config.ActivityWindow, _priceHistory.Count);
+        if (window < 10) return 0;
+        
+        // Realized Volatility
+        decimal realizedVol = 0;
+        var recentPrices = _priceHistory.TakeLast(window).ToArray();
+        
+        for (int i = 1; i < recentPrices.Length; i++)
+        {
+            realizedVol += Math.Abs(recentPrices[i] - recentPrices[i-1]);
+        }
+        
+        // Volume за окно
+        long totalVolume = _volumeHistory.TakeLast(window).Sum();
+        
+        // Activity Score = RV * Volume
+        return realizedVol * totalVolume;
+    }
+    
+    // РАСЧЕТ EFFICIENCY RATIO
+    private decimal CalculateEfficiencyRatio()
+    {
+        int window = Math.Min(_config.EfficiencyWindow, _priceHistory.Count);
+        if (window < 10) return 0.5m; // Нейтральное значение
+        
+        var recentPrices = _priceHistory.TakeLast(window).ToArray();
+        
+        // Чистое изменение цены
+        decimal priceChange = Math.Abs(recentPrices[^1] - recentPrices[0]);
+        
+        // Realized Volatility (сумма всех движений)
+        decimal totalMovement = 0;
+        for (int i = 1; i < recentPrices.Length; i++)
+        {
+            totalMovement += Math.Abs(recentPrices[i] - recentPrices[i-1]);
+        }
+        
+        return totalMovement > 0 ? priceChange / totalMovement : 0;
+    }
+    
+    // РАСЧЕТ VWAP DEVIATION
+    private decimal CalculateVWAPDeviation(TickData tick)
+    {
+        if (_vwapVolume == 0) return 0;
+        
+        decimal currentPrice = CalculateWeightedMidPrice(tick);
+        decimal deviation = currentPrice - _currentVWAP;
+        
+        // Нормализация через текущую волатильность
+        decimal currentVolatility = CalculateCurrentVolatility();
+        
+        return currentVolatility > 0 ? deviation / currentVolatility : 0;
+    }
+    
+    // WEIGHTED MID PRICE
+    private decimal CalculateWeightedMidPrice(TickData tick)
+    {
+        if (tick.BidSize + tick.AskSize == 0)
+            return (tick.BestBid + tick.BestAsk) / 2;
+            
+        return (tick.BestBid * tick.AskSize + tick.BestAsk * tick.BidSize) / 
+               (tick.BidSize + tick.AskSize);
+    }
+    
+    // ПРОВЕРКА УСЛОВИЙ ВХОДА
+    private Signal? CheckEntryConditions(TickData tick)
+    {
+        // Базовые проверки
+        if (Math.Abs(_lastOBIZScore) < _config.ZScoreThreshold)
+            return null;
+            
+        if (!IsHighActivity())
+            return null;
+            
+        // Определение режима рынка
+        MarketRegime regime = DetermineMarketRegime();
+        
+        return regime switch
+        {
+            MarketRegime.Choppy => CheckMeanReversionEntry(),
+            MarketRegime.Trending => CheckMomentumEntry(),
+            MarketRegime.Mixed => CheckConservativeEntry(),
+            _ => null
+        };
+    }
+    
+    // ПРОВЕРКА ВЫСОКОЙ АКТИВНОСТИ
+    private bool IsHighActivity()
+    {
+        if (_activityStats.Count < _config.MinSamplesForPercentile)
+            return true; // В начале торгуем все сигналы
+            
+        decimal threshold = _activityStats.GetPercentile(_config.ActivityPercentileThreshold);
+        return _lastActivityScore >= threshold;
+    }
+    
+    // ОПРЕДЕЛЕНИЕ РЕЖИМА РЫНКА
+    private MarketRegime DetermineMarketRegime()
+    {
+        if (_lastEfficiencyRatio < _config.ChoppyThreshold)
+            return MarketRegime.Choppy;
+        else if (_lastEfficiencyRatio > _config.TrendingThreshold)
+            return MarketRegime.Trending;
+        else
+            return MarketRegime.Mixed;
+    }
+    
+    // MEAN REVERSION ENTRY
+    private Signal? CheckMeanReversionEntry()
+    {
+        // Проверка противонаправленности VWAP deviation и OBI
+        if (_lastVWAPDeviation * _lastOBIZScore >= 0)
+            return null;
+            
+        // Сильный дисбаланс + отклонение от VWAP
+        if (Math.Abs(_lastVWAPDeviation) > _config.VWAPDeviationThreshold && 
+            Math.Abs(_lastOBIZScore) > _config.StrongZScoreThreshold)
+        {
+            var direction = _lastOBIZScore > 0 ? TradeDirection.Sell : TradeDirection.Buy;
+            return CreateSignal(direction, SignalConfidence.High);
+        }
+        
+        return null;
+    }
+    
+    // MOMENTUM ENTRY (для импульсного режима)
+    private Signal? CheckMomentumEntry()
+    {
+        // Упрощенная версия - требует более строгих условий
+        if (Math.Abs(_lastOBIZScore) < _config.StrongZScoreThreshold * 1.5m)
+            return null;
+            
+        var direction = _lastOBIZScore < 0 ? TradeDirection.Buy : TradeDirection.Sell;
+        return CreateSignal(direction, SignalConfidence.Medium);
+    }
+    
+    // CONSERVATIVE ENTRY
+    private Signal? CheckConservativeEntry()
+    {
+        if (Math.Abs(_lastOBIZScore) < _config.StrongZScoreThreshold ||
+            Math.Abs(_lastVWAPDeviation) < _config.VWAPDeviationThreshold)
+            return null;
+            
+        if (_lastVWAPDeviation * _lastOBIZScore >= 0)
+            return null;
+            
+        var direction = _lastOBIZScore > 0 ? TradeDirection.Sell : TradeDirection.Buy;
+        return CreateSignal(direction, SignalConfidence.Low);
+    }
+    
+    // СОЗДАНИЕ СИГНАЛА
+    private Signal CreateSignal(TradeDirection direction, SignalConfidence confidence)
+    {
+        decimal currentPrice = _priceHistory.Last();
+        decimal currentVol = CalculateCurrentVolatility();
+        
+        // Адаптивные TP/SL
+        decimal volMultiplier = currentVol / GetAverageVolatility();
+        decimal tpRatio = _config.BaseTakeProfit * Math.Max(volMultiplier, 0.5m);
+        decimal slRatio = _config.BaseStopLoss * Math.Max(volMultiplier, 0.5m);
+        
+        decimal tpPrice, slPrice;
+        
+        if (direction == TradeDirection.Buy)
+        {
+            tpPrice = currentPrice * (1 + tpRatio);
+            slPrice = currentPrice * (1 - slRatio);
+        }
+        else
+        {
+            tpPrice = currentPrice * (1 - tpRatio);
+            slPrice = currentPrice * (1 + slRatio);
+        }
+        
+        return new Signal
+        {
+            Direction = direction,
+            Confidence = confidence,
+            EntryPrice = currentPrice,
+            TPPrice = tpPrice,
+            SLPrice = slPrice,
+            Timestamp = DateTime.UtcNow
+        };
+    }
+    
+    // УПРАВЛЕНИЕ ПОЗИЦИЕЙ
+    private async Task<TradingDecision> ManagePositionAsync(TickData tick)
+    {
+        decimal currentPrice = CalculateWeightedMidPrice(tick);
+        decimal pnlRatio = _currentPosition.GetPnLRatio(currentPrice);
+        
+        // Partial close на 80% прибыли
+        if (pnlRatio >= _config.PartialCloseRatio && !_currentPosition.IsPartialClosed)
+        {
+            _currentPosition.PartialClose();
+            return new TradingDecision 
+            { 
+                Action = TradingAction.PartialClose,
+                Percentage = 0.5m 
+            };
+        }
+        
+        // Time-based exit
+        if (_currentPosition.GetHoldingTimeSeconds() > _config.MaxHoldTimeSeconds)
+        {
+            return new TradingDecision { Action = TradingAction.ClosePosition };
+        }
+        
+        return TradingDecision.NoAction;
+    }
+    
+    // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    private decimal CalculateStandardDeviation(IEnumerable<decimal> values, decimal mean)
+    {
+        var variance = values.Select(x => (x - mean) * (x - mean)).Average();
+        return (decimal)Math.Sqrt((double)variance);
+    }
+    
+    private decimal CalculateCurrentVolatility()
+    {
+        int window = Math.Min(50, _priceHistory.Count);
+        if (window < 5) return 0.001m; // Минимальная волатильность
+        
+        var recentPrices = _priceHistory.TakeLast(window);
+        return recentPrices.Zip(recentPrices.Skip(1), (a, b) => Math.Abs(b - a)).Average();
+    }
+    
+    private decimal GetAverageVolatility()
+    {
+        int window = Math.Min(500, _priceHistory.Count);
+        if (window < 10) return 0.001m;
+        
+        decimal totalVol = 0;
+        var prices = _priceHistory.TakeLast(window).ToArray();
+        
+        for (int i = 1; i < prices.Length; i++)
+        {
+            totalVol += Math.Abs(prices[i] - prices[i-1]);
+        }
+        
+        return totalVol / (prices.Length - 1);
+    }
+    
+    private void LogError(string message)
+    {
+        // Реализация логирования
+        Console.WriteLine($"[ERROR] {DateTime.UtcNow}: {message}");
+    }
+}
+
+// КОНФИГУРАЦИЯ СТРАТЕГИИ
+public class StrategyConfig
+{
+    // Основные параметры
+    public decimal ZScoreThreshold { get; set; } = 2.0m;
+    public decimal StrongZScoreThreshold { get; set; } = 2.5m;
+    public decimal VWAPDeviationThreshold { get; set; } = 1.5m;
+    
+    // Окна для расчетов
+    public int ZScoreWindow { get; set; } = 100;
+    public int ActivityWindow { get; set; } = 200;
+    public int EfficiencyWindow { get; set; } = 50;
+    public int VWAPResetPeriod { get; set; } = 1000;
+    
+    // Режимы рынка
+    public decimal ChoppyThreshold { get; set; } = 0.3m;
+    public decimal TrendingThreshold { get; set; } = 0.7m;
+    
+    // Activity фильтр
+    public decimal ActivityPercentileThreshold { get; set; } = 75m;
+    public int MinSamplesForPercentile { get; set; } = 100;
+    
+    // Risk Management
+    public decimal BaseTakeProfit { get; set; } = 0.0013m; // 1.3 RR
+    public decimal BaseStopLoss { get; set; } = 0.001m;    // 1.0 RR
+    public decimal PartialCloseRatio { get; set; } = 0.8m;
+    public int MaxHoldTimeSeconds { get; set; } = 300;
+    
+    // Технические
+    public int MaxHistorySize { get; set; } = 2000;
+    public int MinHistoryForCalculation { get; set; } = 50;
+}
+
+// ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ
+public enum MarketRegime { Choppy, Trending, Mixed }
+
+public enum TradingAction 
+{ 
+    NoAction, 
+    OpenPosition, 
+    ClosePosition, 
+    PartialClose 
+}
+
+public struct TradingDecision
+{
+    public TradingAction Action { get; set; }
+    public Signal? Signal { get; set; }
+    public decimal Percentage { get; set; }
+    
+    public static TradingDecision NoAction => new() { Action = TradingAction.NoAction };
+}
+
+// CIRCULAR BUFFER ДЛЯ ЭФФЕКТИВНОГО ХРАНЕНИЯ
+public class CircularBuffer<T> : IEnumerable<T>
+{
+    private readonly T[] _buffer;
+    private int _head;
+    private int _tail;
+    private int _size;
+    private readonly int _capacity;
+
+    public CircularBuffer(int capacity)
+    {
+        _capacity = capacity;
+        _buffer = new T[capacity];
+    }
+
+    public void Add(T item)
+    {
+        _buffer[_head] = item;
+        _head = (_head + 1) % _capacity;
+        
+        if (_size < _capacity)
+        {
+            _size++;
+        }
+        else
+        {
+            _tail = (_tail + 1) % _capacity;
+        }
+    }
+
+    public int Count => _size;
+    public T Last() => _size > 0 ? _buffer[(_head - 1 + _capacity) % _capacity] : default(T);
+    
+    public IEnumerable<T> TakeLast(int count)
+    {
+        count = Math.Min(count, _size);
+        for (int i = 0; i < count; i++)
+        {
+            int index = (_head - count + i + _capacity) % _capacity;
+            yield return _buffer[index];
+        }
+    }
+
+    public IEnumerator<T> GetEnumerator()
+    {
+        for (int i = 0; i < _size; i++)
+        {
+            yield return _buffer[(_tail + i) % _capacity];
+        }
+    }
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+}
+
+// ROLLING STATISTICS
+public class RollingStatistics
+{
+    private readonly CircularBuffer<decimal> _values;
+    private decimal _sum;
+    
+    public RollingStatistics(int windowSize)
+    {
+        _values = new CircularBuffer<decimal>(windowSize);
+    }
+    
+    public void Add(decimal value)
+    {
+        if (_values.Count == ((CircularBuffer<decimal>)_values).Count)
+        {
+            // Убираем старое значение из суммы
+            _sum -= _values.First();
+        }
+        
+        _values.Add(value);
+        _sum += value;
+    }
+    
+    public int Count => _values.Count;
+    public decimal Mean => Count > 0 ? _sum / Count : 0;
+    
+    public decimal GetPercentile(decimal percentile)
+    {
+        if (Count == 0) return 0;
+        
+        var sorted = _values.OrderBy(x => x).ToArray();
+        int index = (int)(percentile / 100.0 * (sorted.Length - 1));
+        return sorted[index];
+    }
+}
+
+// ПОЗИЦИЯ
+public class Position
+{
+    public bool IsOpen { get; private set; }
+    public TradeDirection Direction { get; private set; }
+    public decimal EntryPrice { get; private set; }
+    public decimal TPPrice { get; private set; }
+    public decimal SLPrice { get; private set; }
+    public DateTime EntryTime { get; private set; }
+    public bool IsPartialClosed { get; private set; }
+    
+    public void Open(Signal signal)
+    {
+        IsOpen = true;
+        Direction = signal.Direction;
+        EntryPrice = signal.EntryPrice;
+        TPPrice = signal.TPPrice;
+        SLPrice = signal.SLPrice;
+        EntryTime = DateTime.UtcNow;
+        IsPartialClosed = false;
+    }
+    
+    public void Close()
+    {
+        IsOpen = false;
+        IsPartialClosed = false;
+    }
+    
+    public void PartialClose()
+    {
+        IsPartialClosed = true;
+    }
+    
+    public decimal GetPnLRatio(decimal currentPrice)
+    {
+        if (!IsOpen) return 0;
+        
+        decimal pnl = Direction == TradeDirection.Buy 
+            ? currentPrice - EntryPrice 
+            : EntryPrice - currentPrice;
+            
+        decimal maxProfit = Math.Abs(TPPrice - EntryPrice);
+        return maxProfit > 0 ? pnl / maxProfit : 0;
+    }
+    
+    public int GetHoldingTimeSeconds()
+    {
+        return (int)(DateTime.UtcNow - EntryTime).TotalSeconds;
+    }
+}
+
+// ПРИМЕР ИСПОЛЬЗОВАНИЯ
+/*
+public class TradingModule
+{
+    private readonly OBIZScoreStrategy _strategy;
+    
+    public TradingModule()
+    {
+        var config = new StrategyConfig();
+        _strategy = new OBIZScoreStrategy(config);
+    }
+    
+    public async Task ProcessTickAsync(TickData tick)
+    {
+        var decision = await _strategy.OnTickAsync(tick);
+        
+        switch (decision.Action)
+        {
+            case TradingAction.OpenPosition:
+                await ExecuteOrderAsync(decision.Signal.Value);
+                break;
+                
+            case TradingAction.ClosePosition:
+                await ClosePositionAsync();
+                break;
+                
+            case TradingAction.PartialClose:
+                await PartialCloseAsync(decision.Percentage);
+                break;
+        }
+    }
+    
+    private async Task ExecuteOrderAsync(Signal signal) { /* Исполнение ордера */ }
+    private async Task ClosePositionAsync() { /* Закрытие позиции */ }
+    private async Task PartialCloseAsync(decimal percentage) { /* Частичное закрытие */ }
+}
+*/

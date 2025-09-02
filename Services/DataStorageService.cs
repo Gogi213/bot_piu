@@ -58,6 +58,89 @@ namespace Services
             return _universeData.Count;
         }
 
+        /// <summary>
+        /// Обновление NATR монеты с проверкой lifecycle состояний
+        /// </summary>
+        public List<string> UpdateCoinNatrWithLifecycle(string symbol, decimal natr, decimal minNatrThreshold)
+        {
+            var coinsToExclude = new List<string>();
+            
+            if (_universeData.TryGetValue(symbol, out var coinData))
+            {
+                var previousNatr = coinData.Natr ?? 0;
+                coinData.Natr = natr;
+                coinData.LastUpdated = DateTime.UtcNow;
+
+                // Проверяем переходы состояний
+                if (coinData.PassedCurrentFilters && natr < minNatrThreshold)
+                {
+                    // NATR упал ниже порога - начинаем отсчет времени
+                    coinData.PassedCurrentFilters = false;
+                    coinData.LastPassedFiltersTime = DateTime.UtcNow; // Фиксируем время когда перестала проходить
+                    
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⏰ NATR упал: {symbol} {previousNatr:F2}% → {natr:F2}% (час на восстановление)");
+                }
+                else if (!coinData.PassedCurrentFilters && natr >= minNatrThreshold)
+                {
+                    // NATR восстановился
+                    coinData.PassedCurrentFilters = true;
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ NATR восстановлен: {symbol} {previousNatr:F2}% → {natr:F2}%");
+                }
+                
+                // Проверяем нужно ли исключить (час прошел)
+                if (!coinData.PassedCurrentFilters && 
+                    DateTime.UtcNow - coinData.LastPassedFiltersTime >= TimeSpan.FromHours(1))
+                {
+                    coinsToExclude.Add(symbol);
+                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚫 Исключение: {symbol} (час истек, NATR: {natr:F2}%)");
+                }
+
+                _universeData[symbol] = coinData;
+            }
+
+            return coinsToExclude;
+        }
+
+        /// <summary>
+        /// Получение активных монет для торговли (проходят фильтры или в пределах часа)
+        /// </summary>
+        public List<string> GetActiveTradingCoins(decimal minVolume, decimal minNatr)
+        {
+            return _universeData.Values
+                .Where(coin => coin.Volume24h >= minVolume && 
+                              coin.Natr.HasValue && 
+                              (coin.PassedCurrentFilters || // Проходит фильтры
+                               DateTime.UtcNow - coin.LastPassedFiltersTime < TimeSpan.FromHours(1))) // Или в пределах часа
+                .OrderByDescending(coin => coin.Volume24h)
+                .Select(coin => coin.Symbol)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Добавление новой монеты в пул с правильной инициализацией lifecycle
+        /// </summary>
+        public bool AddNewCoinToPool(CoinData coinData, decimal minNatrThreshold)
+        {
+            if (coinData?.Natr == null || coinData.Natr < minNatrThreshold)
+                return false;
+
+            // Проверяем не добавлена ли уже
+            if (_universeData.ContainsKey(coinData.Symbol))
+                return false;
+
+            // Инициализируем lifecycle поля
+            coinData.FirstAddedTime = DateTime.UtcNow;
+            coinData.LastPassedFiltersTime = DateTime.UtcNow;
+            coinData.PassedCurrentFilters = true;
+            coinData.CyclesInPool = 1;
+            coinData.Status = CoinLifecycleStatus.New;
+
+            _universeData[coinData.Symbol] = coinData;
+            
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ➕ Монета добавлена: {coinData.Symbol} (NATR: {coinData.Natr:F2}%)");
+            return true;
+        }
+
         #endregion
 
         #region Trading Signals

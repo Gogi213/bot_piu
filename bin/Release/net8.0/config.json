@@ -1,0 +1,30 @@
+{
+  "Trading": {
+    "UsdAmount": 8.0,
+    "TakeProfitPercent": 3.55,
+    "StopLossPercent": 1.9,
+    "EnableBreakEven": true,
+    "BreakEvenActivationPercent": 1.9,
+    "BreakEvenStopLossPercent": 0.2,
+    "TickSize": 0.00001,
+    "MonitorIntervalSeconds": 0.01
+  },
+  "AutoTrading": {
+    "MaxConcurrentPositions": 10,
+    "MinTimeBetweenTradesMinutes": 0,
+    "EnableAutoTrading": true
+  },
+  "Backend": {
+    "Port": 5000,
+    "MinVolumeUsdt": 30000000,
+    "MinNatrPercent": 0.55,
+    "NatrPeriods": 30,
+    "HistoryCandles": 60,
+    "UpdateIntervalMinutes": 5,
+    "ZScoreSmaPeriod": 17,
+    "ZScoreThreshold": 1.4,
+    "StrategySmaPeriod": 30,
+    "EnableFifteenSecondTrading": true,
+    "FifteenSecondWarmupCandles": 35
+  }
+}

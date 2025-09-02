@@ -28,12 +28,31 @@ namespace Services
             {
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Загрузка USDT перпетуальных контрактов...");
 
+                // Добавляем задержку для предотвращения rate limit
+                await Task.Delay(1000);
+
                 // Получаем 24h статистику для всех символов
                 var tickerResponse = await _restClient.UsdFuturesApi.ExchangeData.GetTickersAsync();
                 
                 if (!tickerResponse.Success)
                 {
-                    throw new Exception($"Ошибка получения тикеров: {tickerResponse.Error}");
+                    var errorMsg = tickerResponse.Error?.ToString() ?? "Unknown error";
+                    if (errorMsg.Contains("403") || errorMsg.Contains("Forbidden"))
+                    {
+                        Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Rate limit достигнут, ожидание 30 секунд...");
+                        await Task.Delay(30000);
+                        
+                        // Повторная попытка
+                        tickerResponse = await _restClient.UsdFuturesApi.ExchangeData.GetTickersAsync();
+                        if (!tickerResponse.Success)
+                        {
+                            throw new Exception($"Ошибка получения тикеров после retry: {tickerResponse.Error}");
+                        }
+                    }
+                    else
+                    {
+                        throw new Exception($"Ошибка получения тикеров: {tickerResponse.Error}");
+                    }
                 }
 
                 var filteredCoins = new List<CoinData>();
@@ -116,6 +135,37 @@ namespace Services
         }
 
         /// <summary>
+        /// Получение информации о конкретном символе
+        /// </summary>
+        public async Task<CoinTickerData?> GetSymbolTickerAsync(string symbol)
+        {
+            try
+            {
+                var tickerResponse = await _restClient.UsdFuturesApi.ExchangeData.GetTickerAsync(symbol);
+                
+                if (!tickerResponse.Success)
+                {
+                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss.fff}] ⚠️ Символ {symbol} не найден: {tickerResponse.Error}");
+                    return null;
+                }
+
+                var ticker = tickerResponse.Data;
+                return new CoinTickerData
+                {
+                    Symbol = ticker.Symbol,
+                    Price = ticker.LastPrice,
+                    QuoteVolume = ticker.QuoteVolume,
+                    PriceChangePercent = ticker.PriceChangePercent
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss.fff}] ❌ Ошибка получения данных для {symbol}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Пакетная загрузка исторических данных для списка монет
         /// </summary>
         public async Task<Dictionary<string, List<CandleData>>> GetBatchHistoricalDataAsync(List<string> symbols, int candleCount = 35)
@@ -141,11 +191,7 @@ namespace Services
                     result[item.Symbol] = item.Candles;
                 }
 
-                // Небольшая задержка между пакетами для избежания лимитов
-                if (i + batchSize < symbols.Count)
-                {
-                    await Task.Delay(100);
-                }
+                // Убрали задержку между батчами
 
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Обработано {Math.Min(i + batchSize, symbols.Count)}/{symbols.Count} символов");
             }
@@ -183,30 +229,104 @@ namespace Services
         {
             try
             {
+                // Сначала пробуем получить через GetExchangeInfoAsync
                 var exchangeInfoResponse = await _restClient.UsdFuturesApi.ExchangeData.GetExchangeInfoAsync();
-                if (!exchangeInfoResponse.Success)
+                if (exchangeInfoResponse.Success && exchangeInfoResponse.Data?.Symbols != null)
                 {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Ошибка получения ExchangeInfo: {exchangeInfoResponse.Error}");
-                    return null;
+                    var symbolInfo = exchangeInfoResponse.Data.Symbols.FirstOrDefault(s => s.Name == symbol);
+                    if (symbolInfo?.PriceFilter?.TickSize != null)
+                    {
+                        JsonLogger.Debug("BINANCE_DATA", "TickSize retrieved from ExchangeInfo", new Dictionary<string, object>
+                        {
+                            ["symbol"] = symbol,
+                            ["tickSize"] = symbolInfo.PriceFilter.TickSize
+                        });
+                        return symbolInfo.PriceFilter.TickSize;
+                    }
+                }
+                else
+                {
+                    JsonLogger.Warning("BINANCE_DATA", "ExchangeInfo request failed", new Dictionary<string, object>
+                    {
+                        ["symbol"] = symbol,
+                        ["error"] = exchangeInfoResponse.Error?.ToString() ?? "Unknown error",
+                        ["fallbackToSmartTickSize"] = true
+                    });
                 }
 
-                var symbolInfo = exchangeInfoResponse.Data.Symbols.FirstOrDefault(s => s.Name == symbol);
-                if (symbolInfo == null)
-                {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚠️ Символ {symbol} не найден в ExchangeInfo");
-                    return null;
-                }
-
-                var priceFilter = symbolInfo.PriceFilter;
-                var tickSize = priceFilter?.TickSize;
-                
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📏 TickSize для {symbol}: {tickSize}");
-                return tickSize;
+                // Fallback: умный расчет TickSize на основе цены
+                return await GetSmartTickSizeAsync(symbol);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка получения TickSize для {symbol}: {ex.Message}");
-                return null;
+                JsonLogger.Error("BINANCE_DATA", "Failed to get TickSize", new Dictionary<string, object>
+                {
+                    ["symbol"] = symbol,
+                    ["fallbackToSmartTickSize"] = true
+                }, ex);
+                
+                // Fallback: умный расчет TickSize
+                return await GetSmartTickSizeAsync(symbol);
+            }
+        }
+
+        /// <summary>
+        /// Умный расчет TickSize на основе цены символа и популярных паттернов Binance
+        /// </summary>
+        private async Task<decimal> GetSmartTickSizeAsync(string symbol)
+        {
+            try
+            {
+                // Получаем текущую цену
+                var currentPrice = await GetCurrentPriceAsync(symbol);
+                if (!currentPrice.HasValue || currentPrice.Value <= 0)
+                {
+                    JsonLogger.Warning("BINANCE_DATA", "Could not get current price for smart TickSize", new Dictionary<string, object>
+                    {
+                        ["symbol"] = symbol,
+                        ["defaultTickSize"] = 0.0001m
+                    });
+                    return 0.0001m; // Безопасное значение по умолчанию
+                }
+
+                var price = currentPrice.Value;
+                decimal smartTickSize;
+
+                // Умная логика на основе цены и паттернов Binance
+                if (price >= 1000)
+                    smartTickSize = 1m;           // BTCUSDT и т.д.
+                else if (price >= 100)
+                    smartTickSize = 0.1m;         // ETHUSDT и т.д.
+                else if (price >= 10)
+                    smartTickSize = 0.01m;        // BNBUSDT и т.д.
+                else if (price >= 1)
+                    smartTickSize = 0.001m;       // ADAUSDT и т.д.
+                else if (price >= 0.1m)
+                    smartTickSize = 0.0001m;      // DOGEUSDT и т.д.
+                else if (price >= 0.01m)
+                    smartTickSize = 0.00001m;     // SHIBUSDT и т.д.
+                else
+                    smartTickSize = 0.000001m;    // Очень дешевые монеты
+
+                JsonLogger.Info("BINANCE_DATA", "Smart TickSize calculated", new Dictionary<string, object>
+                {
+                    ["symbol"] = symbol,
+                    ["currentPrice"] = price,
+                    ["smartTickSize"] = smartTickSize,
+                    ["method"] = "price-based-calculation"
+                });
+
+                return smartTickSize;
+            }
+            catch (Exception ex)
+            {
+                JsonLogger.Error("BINANCE_DATA", "Smart TickSize calculation failed", new Dictionary<string, object>
+                {
+                    ["symbol"] = symbol,
+                    ["defaultTickSize"] = 0.0001m
+                }, ex);
+
+                return 0.0001m; // Безопасное значение по умолчанию
             }
         }
 
@@ -264,5 +384,16 @@ namespace Services
         public decimal EntryPrice { get; set; }
         public decimal MarkPrice { get; set; }
         public decimal PnL { get; set; }
+    }
+
+    /// <summary>
+    /// Данные тикера для конкретного символа
+    /// </summary>
+    public class CoinTickerData
+    {
+        public string Symbol { get; set; } = "";
+        public decimal Price { get; set; }
+        public decimal QuoteVolume { get; set; }
+        public decimal PriceChangePercent { get; set; }
     }
 }

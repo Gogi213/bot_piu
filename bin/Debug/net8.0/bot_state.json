@@ -1,32 +1,13 @@
 {
   "ActivePositions": {
-    "LPTUSDT": {
-      "Symbol": "LPTUSDT",
-      "Side": "BUY",
-      "UsdAmount": 8.0,
-      "EntryPrice": 7.854,
-      "CreatedAt": "2025-08-29T00:10:01.2075009Z",
-      "TradingConfig": {
-        "Symbol": "LPTUSDT",
-        "Side": "BUY",
-        "UsdAmount": 8.0,
-        "TakeProfitPercent": 3.55,
-        "StopLossPercent": 1.9,
-        "EnableBreakEven": true,
-        "BreakEvenActivationPercent": 1.9,
-        "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.01,
-        "MonitorIntervalSeconds": 0.01
-      }
-    },
-    "TREEUSDT": {
-      "Symbol": "TREEUSDT",
+    "LRCUSDT": {
+      "Symbol": "LRCUSDT",
       "Side": "SELL",
       "UsdAmount": 8.0,
-      "EntryPrice": 0.3857000,
-      "CreatedAt": "2025-08-29T00:11:00.4969394Z",
+      "EntryPrice": 0.11158,
+      "CreatedAt": "2025-08-31T17:35:46.6358396Z",
       "TradingConfig": {
-        "Symbol": "TREEUSDT",
+        "Symbol": "LRCUSDT",
         "Side": "SELL",
         "UsdAmount": 8.0,
         "TakeProfitPercent": 3.55,
@@ -38,52 +19,14 @@
         "MonitorIntervalSeconds": 0.01
       }
     },
-    "BASUSDT": {
-      "Symbol": "BASUSDT",
-      "Side": "BUY",
-      "UsdAmount": 8.0,
-      "EntryPrice": 0.0218490,
-      "CreatedAt": "2025-08-29T00:11:02.0845021Z",
-      "TradingConfig": {
-        "Symbol": "BASUSDT",
-        "Side": "BUY",
-        "UsdAmount": 8.0,
-        "TakeProfitPercent": 3.55,
-        "StopLossPercent": 1.9,
-        "EnableBreakEven": true,
-        "BreakEvenActivationPercent": 1.9,
-        "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.0001,
-        "MonitorIntervalSeconds": 0.01
-      }
-    },
-    "BTRUSDT": {
-      "Symbol": "BTRUSDT",
-      "Side": "BUY",
-      "UsdAmount": 8.0,
-      "EntryPrice": 0.0809400,
-      "CreatedAt": "2025-08-29T00:11:02.3368103Z",
-      "TradingConfig": {
-        "Symbol": "BTRUSDT",
-        "Side": "BUY",
-        "UsdAmount": 8.0,
-        "TakeProfitPercent": 3.55,
-        "StopLossPercent": 1.9,
-        "EnableBreakEven": true,
-        "BreakEvenActivationPercent": 1.9,
-        "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.0001,
-        "MonitorIntervalSeconds": 0.01
-      }
-    },
-    "AINUSDT": {
-      "Symbol": "AINUSDT",
+    "HEMIUSDT": {
+      "Symbol": "HEMIUSDT",
       "Side": "SELL",
       "UsdAmount": 8.0,
-      "EntryPrice": 0.1282900,
-      "CreatedAt": "2025-08-29T00:13:00.7855407Z",
+      "EntryPrice": 0.0284000,
+      "CreatedAt": "2025-08-31T17:41:16.0492248Z",
       "TradingConfig": {
-        "Symbol": "AINUSDT",
+        "Symbol": "HEMIUSDT",
         "Side": "SELL",
         "UsdAmount": 8.0,
         "TakeProfitPercent": 3.55,
@@ -91,18 +34,18 @@
         "EnableBreakEven": true,
         "BreakEvenActivationPercent": 1.9,
         "BreakEvenStopLossPercent": 0.2,
-        "TickSize": 0.001,
+        "TickSize": 0.0001,
         "MonitorIntervalSeconds": 0.01
       }
     },
-    "WLFIUSDT": {
-      "Symbol": "WLFIUSDT",
+    "MUSDT": {
+      "Symbol": "MUSDT",
       "Side": "BUY",
       "UsdAmount": 8.0,
-      "EntryPrice": 0.2916000,
-      "CreatedAt": "2025-08-29T00:13:00.8600917Z",
+      "EntryPrice": 0.6743000,
+      "CreatedAt": "2025-08-31T17:42:17.0456896Z",
       "TradingConfig": {
-        "Symbol": "WLFIUSDT",
+        "Symbol": "MUSDT",
         "Side": "BUY",
         "UsdAmount": 8.0,
         "TakeProfitPercent": 3.55,
@@ -116,32 +59,46 @@
     }
   },
   "LastTradeTime": {
-    "WLFIUSDT": "2025-08-29T00:13:00.9463126Z",
-    "BTRUSDT": "2025-08-29T00:11:02.3471254Z",
+    "WLFIUSDT": "2025-08-29T14:40:46.8891326Z",
+    "BTRUSDT": "2025-08-29T14:50:02.3543481Z",
     "SOMIUSDT": "2025-08-28T20:36:03.4159628Z",
-    "PYTHUSDT": "2025-08-28T23:25:00.4677518Z",
+    "PYTHUSDT": "2025-08-29T21:30:00.873327Z",
     "XPLUSDT": "2025-08-28T23:47:00.6920436Z",
     "TOWNSUSDT": "2025-08-28T23:22:00.301345Z",
-    "USELESSUSDT": "2025-08-28T23:22:01.8512688Z",
+    "USELESSUSDT": "2025-08-29T19:04:31.8672062Z",
     "CTSIUSDT": "2025-08-28T23:50:01.1427722Z",
     "TREEUSDT": "2025-08-29T00:11:00.5130564Z",
     "BUSDT": "2025-08-28T23:24:11.7338688Z",
     "PUMPUSDT": "2025-08-28T23:50:45.6407433Z",
-    "DOLOUSDT": "2025-08-28T23:25:01.3461672Z",
+    "DOLOUSDT": "2025-08-29T17:06:46.8367953Z",
     "AINUSDT": "2025-08-28T23:53:01.8116962Z",
     "MITOUSDT": "2025-08-28T23:49:00.7225249Z",
     "FLOWUSDT": "2025-08-28T23:56:48.0021746Z",
-    "BASUSDT": "2025-08-29T00:11:02.0933931Z",
-    "LPTUSDT": "2025-08-29T00:10:01.2929918Z"
+    "BASUSDT": "2025-08-29T14:59:17.3198216Z",
+    "LPTUSDT": "2025-08-29T00:10:01.2929918Z",
+    "MAVUSDT": "2025-08-29T15:00:16.9415375Z",
+    "LEVERUSDT": "2025-08-29T15:05:19.8166456Z",
+    "FARTCOINUSDT": "2025-08-29T15:11:42.2708135Z",
+    "HEMIUSDT": "2025-08-31T17:41:16.0644649Z",
+    "TAUSDT": "2025-08-29T15:12:01.9837486Z",
+    "MUSDT": "2025-08-31T17:42:17.0548367Z",
+    "CATIUSDT": "2025-08-29T15:44:02.0750089Z",
+    "BBUSDT": "2025-08-29T17:45:02.2003781Z",
+    "SPKUSDT": "2025-08-29T17:23:46.8588336Z",
+    "1000BONKUSDT": "2025-08-29T19:37:33.7637292Z",
+    "SAPIENUSDT": "2025-08-29T22:10:33.5390348Z",
+    "HOOKUSDT": "2025-08-29T22:29:47.642478Z",
+    "XNYUSDT": "2025-08-29T22:34:47.0497933Z",
+    "LRCUSDT": "2025-08-31T17:35:46.6443473Z"
   },
   "LastSignals": {
     "WLFIUSDT": "LONG",
     "BTRUSDT": "LONG",
     "SOMIUSDT": "SHORT",
-    "PYTHUSDT": "LONG",
+    "PYTHUSDT": "SHORT",
     "XPLUSDT": "SHORT",
     "TOWNSUSDT": "SHORT",
-    "USELESSUSDT": "SHORT",
+    "USELESSUSDT": "LONG",
     "CTSIUSDT": "SHORT",
     "TREEUSDT": "SHORT",
     "BUSDT": "LONG",
@@ -151,7 +108,21 @@
     "MITOUSDT": "SHORT",
     "FLOWUSDT": "LONG",
     "BASUSDT": "LONG",
-    "LPTUSDT": "LONG"
+    "LPTUSDT": "LONG",
+    "MAVUSDT": "SHORT",
+    "LEVERUSDT": "SHORT",
+    "FARTCOINUSDT": "LONG",
+    "HEMIUSDT": "SHORT",
+    "TAUSDT": "LONG",
+    "MUSDT": "LONG",
+    "CATIUSDT": "SHORT",
+    "BBUSDT": "LONG",
+    "SPKUSDT": "SHORT",
+    "1000BONKUSDT": "SHORT",
+    "SAPIENUSDT": "SHORT",
+    "HOOKUSDT": "SHORT",
+    "XNYUSDT": "LONG",
+    "LRCUSDT": "SHORT"
   },
-  "LastSaved": "2025-08-29T00:13:00.9752608Z"
+  "LastSaved": "2025-08-31T17:42:17.0765244Z"
 }

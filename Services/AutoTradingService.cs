@@ -89,26 +89,15 @@ namespace Services
 
             try
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 ЗАПУСК АВТОМАТИЧЕСКОЙ ТОРГОВОЙ СИСТЕМЫ");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ===============================================");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⚡ HFT анализ: каждые 100мс");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 Максимум позиций: {_autoTradingConfig.MaxConcurrentPositions}");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⏰ Пауза между сделками: {_autoTradingConfig.MinTimeBetweenTradesMinutes} мин");
-                Console.WriteLine();
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 Запуск торгового модуля (макс позиций: {_autoTradingConfig.MaxConcurrentPositions})");
 
                 _startTime = DateTime.UtcNow;
                 _systemStartTime = DateTime.UtcNow; // Запоминаем время запуска системы
                 _isRunning = true;
 
-                // Восстановление состояния и синхронизация с биржей
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 💾 Восстановление состояния...");
+                // Восстановление состояния и первичная загрузка
                 await RestoreStateAsync();
-                
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔄 Синхронизация с биржей...");
                 await SynchronizePositionsAsync();
-
-                // Первичная загрузка данных
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Первичная загрузка данных...");
                 var universeResult = await _universeService.UpdateUniverseAsync();
                 if (!universeResult.Success)
                 {
@@ -169,10 +158,11 @@ namespace Services
 
                 _lastSignal[symbol] = newSignal;
 
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🎯 ТОРГОВЫЙ СИГНАЛ: {symbol} → {GetSignalEmoji(newSignal)}{newSignal}");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}]    💰 Цена: {hftEvent.Price:F6}");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}]    📊 Z-Score: {hftEvent.ZScore:F2}");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}]    ⚡ Задержка: {hftEvent.LatencyMs}мс");
+                JsonLogger.TradingSignal(symbol, newSignal, hftEvent.Price, hftEvent.ZScore, null, new Dictionary<string, object>
+                {
+                    ["latencyMs"] = hftEvent.LatencyMs,
+                    ["previousSignal"] = lastSignal
+                });
 
                 // Получаем полную информацию о стратегии
                 var coinData = _dataStorage.GetCoinData(symbol);
@@ -188,12 +178,23 @@ namespace Services
                 }
                 else
                 {
-                    Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ⏸️ Сделка пропущена: {GetTradeBlockReason(symbol)}");
+                    JsonLogger.Info("AUTO_TRADING", "Trade blocked", new Dictionary<string, object>
+                    {
+                        ["symbol"] = symbol,
+                        ["signal"] = newSignal,
+                        ["reason"] = GetTradeBlockReason(symbol),
+                        ["activePositions"] = _activeTradingModules.Count,
+                        ["maxPositions"] = _autoTradingConfig.MaxConcurrentPositions
+                    });
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка обработки сигнала {hftEvent.Symbol}: {ex.Message}");
+                JsonLogger.Error("AUTO_TRADING", "Signal processing error", new Dictionary<string, object>
+                {
+                    ["symbol"] = hftEvent.Symbol,
+                    ["signal"] = hftEvent.NewSignal
+                }, ex);
                 OnError?.Invoke($"Ошибка сигнала {hftEvent.Symbol}: {ex.Message}");
             }
         }
@@ -252,7 +253,7 @@ namespace Services
         {
             try
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🚀 ОТКРЫТИЕ ПОЗИЦИИ: {symbol} {signal}");
+                // Логирование будет в TradeOpened после успешного создания модуля
 
                 // Создаем конфигурацию для торгового модуля
                 var tradingConfig = await CreateTradingConfigAsync(symbol, signal, strategyResult);
@@ -283,18 +284,28 @@ namespace Services
                 var currentPrice = GetCurrentPrice(symbol);
                 await SaveActivePositionAsync(symbol, signal, tradingConfig, currentPrice);
 
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ✅ Позиция открыта: {symbol} {signal}");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}]    💰 Сумма: {tradingConfig.UsdAmount} USDT");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}]    🎯 Take Profit: {tradingConfig.TakeProfitPercent}%");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}]    🛡️ Stop Loss: {tradingConfig.StopLossPercent}%");
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}]    📊 Активных позиций: {_activeTradingModules.Count}/{_autoTradingConfig.MaxConcurrentPositions}");
-                Console.WriteLine();
+                JsonLogger.TradeOpened(symbol, signal, tradingConfig.UsdAmount, currentPrice, new Dictionary<string, object>
+                {
+                    ["takeProfitPercent"] = tradingConfig.TakeProfitPercent,
+                    ["stopLossPercent"] = tradingConfig.StopLossPercent,
+                    ["enableBreakEven"] = tradingConfig.EnableBreakEven,
+                    ["activePositions"] = _activeTradingModules.Count,
+                    ["maxPositions"] = _autoTradingConfig.MaxConcurrentPositions,
+                    ["tickSize"] = tradingConfig.TickSize,
+                    ["zScore"] = strategyResult.ZScore,
+                    ["natr"] = strategyResult.Natr
+                });
 
                 OnTradeOpened?.Invoke(symbol, signal);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] ❌ Ошибка открытия позиции {symbol}: {ex.Message}");
+                JsonLogger.Error("AUTO_TRADING", "Failed to open trade", new Dictionary<string, object>
+                {
+                    ["symbol"] = symbol,
+                    ["signal"] = signal,
+                    ["activePositions"] = _activeTradingModules.Count
+                }, ex);
                 OnError?.Invoke($"Ошибка открытия {symbol}: {ex.Message}");
             }
         }
@@ -304,11 +315,25 @@ namespace Services
         /// </summary>
         private async void OnTradeCompletedHandler(string symbol, string result)
         {
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🏁 ПОЗИЦИЯ ЗАКРЫТА: {symbol} - {result}");
+            var positionData = new Dictionary<string, object>
+            {
+                ["symbol"] = symbol,
+                ["result"] = result,
+                ["activePositions"] = _activeTradingModules.Count,
+                ["maxPositions"] = _autoTradingConfig.MaxConcurrentPositions
+            };
             
             // Сохраняем в историю если есть информация о позиции
             if (_activePositions.TryGetValue(symbol, out var position))
             {
+                var duration = DateTime.UtcNow - position.CreatedAt;
+                positionData["side"] = position.Side;
+                positionData["usdAmount"] = position.UsdAmount;
+                positionData["entryPrice"] = position.EntryPrice;
+                positionData["duration"] = duration.TotalMinutes;
+                positionData["createdAt"] = position.CreatedAt;
+                positionData["closedAt"] = DateTime.UtcNow;
+
                 var tradeHistory = new SimpleStateManager.TradeHistoryRecord
                 {
                     Symbol = symbol,
@@ -318,18 +343,20 @@ namespace Services
                     Result = result,
                     CreatedAt = position.CreatedAt,
                     ClosedAt = DateTime.UtcNow,
-                    Duration = DateTime.UtcNow - position.CreatedAt
+                    Duration = duration
                 };
 
                 await _stateManager.SaveTradeHistoryAsync(tradeHistory);
                 await _stateManager.RemoveActivePositionAsync(symbol);
                 _activePositions.TryRemove(symbol, out _);
             }
+
+            JsonLogger.TradeClosed(symbol, result, positionData);
             
             // Удаляем из активных модулей (TradingModule завершился автономно)
             _activeTradingModules.TryRemove(symbol, out _);
 
-            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 📊 Активных позиций: {_activeTradingModules.Count}/{_autoTradingConfig.MaxConcurrentPositions}");
+            // Информация об активных позициях уже включена в positionData выше
             OnTradeClosed?.Invoke(symbol, result);
         }
 
@@ -340,23 +367,18 @@ namespace Services
         {
             var side = signal == "LONG" ? "BUY" : "SELL";
             
-            // Получаем реальный TickSize для символа
+            // Получаем реальный TickSize для символа (с умным fallback)
             var tickSize = await _binanceDataService.GetTickSizeAsync(symbol);
             
-            // Простой fallback на основе цены
-            if (tickSize == null)
+            // Проверка безопасности - не должно быть null после улучшений
+            if (tickSize == null || tickSize <= 0)
             {
-                var currentPrice = GetCurrentPrice(symbol);
-                if (currentPrice > 1)
-                    tickSize = 0.01m;    // Для дорогих монет
-                else if (currentPrice > 0.1m)
-                    tickSize = 0.001m;   // Для средних монет  
-                else if (currentPrice > 0.01m)
-                    tickSize = 0.0001m;  // Для дешевых монет
-                else
-                    tickSize = 0.00001m; // Для очень дешевых монет
-                    
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] 🔧 Использован fallback TickSize для {symbol}: {tickSize} (цена: {currentPrice})");
+                tickSize = 0.0001m; // Безопасное значение по умолчанию
+                JsonLogger.Warning("AUTO_TRADING", "TickSize fallback to default", new Dictionary<string, object>
+                {
+                    ["symbol"] = symbol,
+                    ["defaultTickSize"] = tickSize
+                });
             }
             
             return new TradingConfig
@@ -387,25 +409,15 @@ namespace Services
         }
 
         /// <summary>
-        /// Проверка перехода таймфрейма
+        /// Проверка перехода 15-секундного таймфрейма
         /// </summary>
         private bool IsTimeframeCrossing(string symbol)
         {
             var now = DateTime.UtcNow;
-            DateTime currentMark;
             
-            // Определяем текущую отметку таймфрейма
-            if (_backendConfig.EnableFifteenSecondTrading)
-            {
-                // 15-секундный таймфрейм: 00, 15, 30, 45 секунд
-                var seconds = (now.Second / 15) * 15;
-                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, seconds, DateTimeKind.Utc);
-            }
-            else
-            {
-                // 1-минутный таймфрейм: начало каждой минуты
-                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
-            }
+            // Только 15-секундный таймфрейм: 00, 15, 30, 45 секунд
+            var seconds = (now.Second / 15) * 15;
+            var currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, seconds, DateTimeKind.Utc);
             
             // Проверяем, произошёл ли переход
             if (_lastTimeframeMark.TryGetValue(symbol, out var lastMark))
@@ -436,18 +448,10 @@ namespace Services
         private bool IsTimeframeCrossingCheck(string symbol)
         {
             var now = DateTime.UtcNow;
-            DateTime currentMark;
             
-            // Определяем текущую отметку таймфрейма
-            if (_backendConfig.EnableFifteenSecondTrading)
-            {
-                var seconds = (now.Second / 15) * 15;
-                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, seconds, DateTimeKind.Utc);
-            }
-            else
-            {
-                currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
-            }
+            // Только 15-секундный таймфрейм: 00, 15, 30, 45 секунд
+            var seconds = (now.Second / 15) * 15;
+            var currentMark = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, seconds, DateTimeKind.Utc);
             
             // Проверяем без изменения состояния
             if (_lastTimeframeMark.TryGetValue(symbol, out var lastMark))
